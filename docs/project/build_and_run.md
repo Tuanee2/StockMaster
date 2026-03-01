@@ -66,6 +66,7 @@ Test hiện có:
   4. Windows dùng `windeployqt` để gom DLL/plugin rồi chạy `NSIS` để tạo installer `.exe`
   5. khi là tag `v*`, upload 2 file này vào GitHub Release
 - Trên GitHub Windows runner, workflow gọi trực tiếp `makensis.exe` từ thư mục cài đặt `NSIS` để tránh lỗi `PATH` không nhận lệnh `makensis`.
+- Workflow cũng truyền `STAGING_DIR` cho NSIS bằng đường dẫn tuyệt đối (`Resolve-Path`) để tránh lỗi không tìm thấy file khi compile installer.
 
 ## 7) Updater trong Settings
 
