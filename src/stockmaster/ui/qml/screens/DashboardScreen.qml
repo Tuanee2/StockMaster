@@ -413,26 +413,82 @@ Flickable {
                                     }
 
                                     Item {
+                                        id: plotArea
+
                                         width: parent.width
-                                        height: parent.height - 34
+                                        height: Math.max(56, parent.height - 34)
 
                                         Row {
                                             anchors.horizontalCenter: parent.horizontalCenter
                                             anchors.bottom: parent.bottom
                                             spacing: 6
 
-                                            Rectangle {
-                                                width: 16
-                                                height: root.barHeight(trend.salesVnd, parent.parent.height - 18)
-                                                radius: 5
-                                                color: "#2D6CDF"
-                                            }
+                                            Repeater {
+                                                model: [
+                                                    {
+                                                        "label": "Doanh số",
+                                                        "color": "#2D6CDF",
+                                                        "value": trend.salesVnd,
+                                                        "valueText": trend.salesText
+                                                    },
+                                                    {
+                                                        "label": "Thu tiền",
+                                                        "color": "#CC7A1A",
+                                                        "value": trend.collectedVnd,
+                                                        "valueText": trend.collectedText
+                                                    }
+                                                ]
 
-                                            Rectangle {
-                                                width: 16
-                                                height: root.barHeight(trend.collectedVnd, parent.parent.height - 18)
-                                                radius: 5
-                                                color: "#CC7A1A"
+                                                delegate: Item {
+                                                    property var barData: modelData
+
+                                                    width: 20
+                                                    height: plotArea.height
+                                                    z: hoverArea.containsMouse ? 2 : 0
+
+                                                    Rectangle {
+                                                        id: valueTooltip
+
+                                                        visible: hoverArea.containsMouse
+                                                        x: Math.round((parent.width - width) / 2)
+                                                        y: Math.max(0, barRect.y - height - 6)
+                                                        width: tooltipText.implicitWidth + 14
+                                                        height: tooltipText.implicitHeight + 8
+                                                        radius: 8
+                                                        color: "#1F3048"
+                                                        opacity: 0.96
+
+                                                        Text {
+                                                            id: tooltipText
+
+                                                            anchors.centerIn: parent
+                                                            text: barData.label + ": " + barData.valueText
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            color: "#FFFFFF"
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        id: barRect
+
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        anchors.bottom: parent.bottom
+                                                        width: 16
+                                                        height: root.barHeight(barData.value, plotArea.height - 18)
+                                                        radius: 5
+                                                        color: barData.color
+                                                    }
+
+                                                    MouseArea {
+                                                        id: hoverArea
+
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        acceptedButtons: Qt.NoButton
+                                                        cursorShape: Qt.PointingHandCursor
+                                                    }
+                                                }
                                             }
                                         }
                                     }

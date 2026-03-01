@@ -41,6 +41,8 @@
     - cảnh báo lô sắp hết hạn
 - Tầng 2: phân tích
   - biểu đồ cột đôi `Doanh số và thu tiền 7 ngày gần nhất`
+    - cột được dựng từ đáy lên
+    - rê chuột vào từng cột sẽ hiện tooltip giá trị thực tế
   - `Top khách hàng theo doanh số`
   - `Top sản phẩm bán chạy`
 
@@ -88,6 +90,10 @@ Màn hình chia 2 cột rõ ràng:
   - lọc theo mã đơn
   - lọc theo từ ngày/đến ngày
   - nút `Lọc`, `Xóa lọc`
+  - layout cố định 3 hàng:
+    - hàng 1: mã đơn
+    - hàng 2: từ ngày + đến ngày
+    - hàng 3: lọc + xóa lọc
 - Khối 2: "Danh sách đơn theo bộ lọc"
   - list đơn kết quả sau lọc
 
@@ -129,6 +135,10 @@ UI đã được chỉnh:
     - nhập số tiền
     - nhập phương thức
     - nhập ngày thu
+    - layout theo 3 hàng rõ ràng:
+      - hàng 1: chọn đơn còn công nợ
+      - hàng 2: số tiền thu + phương thức
+      - hàng 3: ngày thu + nút lập phiếu thu
   - khối lịch sử phiếu thu
   - khối ledger đối soát
   - vùng báo lỗi `lastError`
@@ -158,6 +168,10 @@ Rule UI đang phản ánh:
     - nhập số lượng cộng/trừ
     - nhập lý do
     - nhập ngày điều chỉnh
+    - layout theo 3 hàng rõ ràng:
+      - hàng 1: chọn lô
+      - hàng 2: số lượng + lý do
+      - hàng 3: ngày điều chỉnh + nút áp dụng
   - khối `Snapshot theo lô`
   - khối `Lịch sử biến động`
   - vùng báo lỗi `lastError`

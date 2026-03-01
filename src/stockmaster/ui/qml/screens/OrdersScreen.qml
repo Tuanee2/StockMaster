@@ -378,22 +378,28 @@ Flickable {
                                 }
                             }
 
-                            Flow {
+                            RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
 
                                 SolidTextField {
                                     id: orderNoQueryField
 
-                                    width: Math.max(180, Math.min(260, parent.width * 0.52))
+                                    Layout.fillWidth: true
                                     placeholderText: "Theo mã đơn (VD: ORD00012)"
                                     text: ordersViewModel.queryOrderNo
                                 }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 SolidTextField {
                                     id: fromDateQueryField
 
-                                    width: Math.max(124, Math.min(150, parent.width * 0.3))
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
                                     placeholderText: "Từ ngày"
                                     text: ordersViewModel.queryFromDate
                                 }
@@ -401,17 +407,19 @@ Flickable {
                                 SolidTextField {
                                     id: toDateQueryField
 
-                                    width: Math.max(124, Math.min(150, parent.width * 0.3))
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
                                     placeholderText: "Đến ngày"
                                     text: ordersViewModel.queryToDate
                                 }
                             }
 
-                            Flow {
+                            RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
 
                                 ActionButton {
+                                    Layout.fillWidth: true
                                     text: "Lọc"
                                     fillColor: "#2D6CDF"
                                     onClicked: ordersViewModel.applyOrderQuery(orderNoQueryField.text,
@@ -420,6 +428,7 @@ Flickable {
                                 }
 
                                 ActionButton {
+                                    Layout.fillWidth: true
                                     text: "Xóa lọc"
                                     fillColor: "#607D9C"
                                     onClicked: {

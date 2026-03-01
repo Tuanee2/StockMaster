@@ -341,23 +341,29 @@ Flickable {
                                 color: "#1B2B40"
                             }
 
-                            Flow {
+                            RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
 
                                 SolidComboBox {
                                     id: payableOrderCombo
 
-                                    width: Math.max(260, Math.min(420, parent.width * 0.48))
+                                    Layout.fillWidth: true
                                     enabled: paymentsViewModel.hasSelectedCustomer && paymentsViewModel.payableOrders.length > 0
                                     model: paymentsViewModel.payableOrders
                                     textRole: "label"
                                 }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 SolidTextField {
                                     id: amountField
 
-                                    width: Math.max(140, Math.min(180, parent.width * 0.18))
+                                    Layout.preferredWidth: 220
+                                    Layout.minimumWidth: 180
                                     enabled: paymentsViewModel.hasSelectedCustomer
                                     placeholderText: "Số tiền thu"
                                     inputMethodHints: Qt.ImhDigitsOnly
@@ -366,22 +372,29 @@ Flickable {
                                 SolidTextField {
                                     id: methodField
 
-                                    width: Math.max(140, Math.min(180, parent.width * 0.18))
+                                    Layout.fillWidth: true
                                     enabled: paymentsViewModel.hasSelectedCustomer
                                     placeholderText: "Phương thức"
                                     text: "Tiền mặt"
                                 }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 SolidTextField {
                                     id: paidAtField
 
-                                    width: Math.max(140, Math.min(170, parent.width * 0.2))
+                                    Layout.preferredWidth: 200
+                                    Layout.minimumWidth: 160
                                     enabled: paymentsViewModel.hasSelectedCustomer
                                     placeholderText: "YYYY-MM-DD"
                                     text: Qt.formatDate(new Date(), "yyyy-MM-dd")
                                 }
 
                                 ActionButton {
+                                    Layout.fillWidth: true
                                     text: "Lập phiếu thu"
                                     fillColor: "#2E8B57"
                                     enabled: paymentsViewModel.hasSelectedCustomer && paymentsViewModel.payableOrders.length > 0

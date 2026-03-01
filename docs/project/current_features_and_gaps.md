@@ -30,6 +30,8 @@
   - KPI vận hành
   - cảnh báo vận hành
   - biểu đồ doanh số vs thu tiền 7 ngày gần nhất
+    - cột dựng từ đáy lên
+    - hỗ trợ hover tooltip xem giá trị thực tế
   - top khách hàng
   - top sản phẩm
 - Reports flow:

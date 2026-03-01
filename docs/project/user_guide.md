@@ -229,6 +229,7 @@ Các phần nên xem:
 Cách dùng thực tế:
 - buổi sáng: xem `Cảnh báo vận hành`
 - cuối ngày/cuối tuần: xem biểu đồ doanh số và thu tiền
+- rê chuột vào từng cột trong biểu đồ để xem đúng giá trị tiền của `Doanh số` hoặc `Thu tiền`
 
 ## 13) Xem báo cáo và export
 

@@ -359,23 +359,29 @@ Flickable {
                                 color: "#1B2B40"
                             }
 
-                            Flow {
+                            RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
 
                                 SolidComboBox {
                                     id: lotAdjustCombo
 
-                                    width: Math.max(220, Math.min(340, parent.width * 0.36))
+                                    Layout.fillWidth: true
                                     enabled: inventoryViewModel.hasSelectedProduct && inventoryViewModel.selectedProductLots.length > 0
                                     model: inventoryViewModel.selectedProductLots
                                     textRole: "label"
                                 }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 SolidTextField {
                                     id: adjustQtyField
 
-                                    width: Math.max(120, Math.min(150, parent.width * 0.14))
+                                    Layout.preferredWidth: 180
+                                    Layout.minimumWidth: 150
                                     enabled: inventoryViewModel.hasSelectedProduct
                                     placeholderText: "+/- số lượng"
                                 }
@@ -383,21 +389,28 @@ Flickable {
                                 SolidTextField {
                                     id: adjustReasonField
 
-                                    width: Math.max(220, Math.min(340, parent.width * 0.3))
+                                    Layout.fillWidth: true
                                     enabled: inventoryViewModel.hasSelectedProduct
                                     placeholderText: "Lý do điều chỉnh"
                                 }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
                                 SolidTextField {
                                     id: adjustDateField
 
-                                    width: Math.max(140, Math.min(170, parent.width * 0.18))
+                                    Layout.preferredWidth: 180
+                                    Layout.minimumWidth: 160
                                     enabled: inventoryViewModel.hasSelectedProduct
                                     placeholderText: "YYYY-MM-DD"
                                     text: Qt.formatDate(new Date(), "yyyy-MM-dd")
                                 }
 
                                 ActionButton {
+                                    Layout.fillWidth: true
                                     text: "Áp dụng"
                                     fillColor: "#C9861A"
                                     enabled: inventoryViewModel.hasSelectedProduct && inventoryViewModel.selectedProductLots.length > 0
