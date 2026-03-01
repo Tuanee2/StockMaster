@@ -78,11 +78,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $nsis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (!(Test-Path $nsis)) {
+            $nsis = "${env:ProgramFiles}\NSIS\makensis.exe"
+          }
+          if (!(Test-Path $nsis)) {
+            throw "NSIS makensis.exe was not found after installation."
+          }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           New-Item -ItemType Directory -Force -Path dist\StockMaster | Out-Null
           Copy-Item "${env:BUILD_DIR}\appStockMaster.exe" "dist\StockMaster\appStockMaster.exe"
           windeployqt --release --qmldir src/stockmaster/ui/qml "dist\StockMaster\appStockMaster.exe"
-          & makensis `
+          & $nsis `
             /DAPP_VERSION=$env:RELEASE_VERSION `
             /DOUTPUT_FILE="dist\StockMaster-windows-x64-setup.exe" `
             /DSTAGING_DIR="dist\StockMaster" `
