@@ -24,7 +24,7 @@ struct DraftOrderItemInput {
 
 class OrderService {
 public:
-    OrderService(const infra::db::DatabaseService &databaseService,
+    OrderService(infra::db::DatabaseService &databaseService,
                  const CustomerService &customerService,
                  ProductService &productService);
 
@@ -34,6 +34,8 @@ public:
     [[nodiscard]] QVector<domain::OrderItem> findOrderItems(const QString &orderId) const;
     [[nodiscard]] bool getOrderById(const QString &orderId, domain::Order &order) const;
     [[nodiscard]] int openOrderCount() const;
+    [[nodiscard]] bool saveToDatabase(QString &errorMessage) const;
+    void restoreOrderSnapshot(const domain::Order &orderSnapshot);
 
     [[nodiscard]] bool createDraftOrder(const QString &customerId,
                                         const QString &orderDate,
@@ -51,7 +53,8 @@ public:
     [[nodiscard]] bool confirmOrder(const QString &orderId, QString &errorMessage);
     [[nodiscard]] bool applyPayment(const QString &orderId,
                                     core::Money amountVnd,
-                                    QString &errorMessage);
+                                    QString &errorMessage,
+                                    bool persistState = true);
     [[nodiscard]] bool voidOrder(const QString &orderId, QString &errorMessage);
 
 private:
@@ -73,11 +76,19 @@ private:
                                             QVector<StockAllocation> &planned,
                                             QString &errorMessage) const;
 
+    static void recomputeOrderTotals(domain::Order &order, const QVector<domain::OrderItem> &items);
     static core::Money calculateLineSubtotal(const domain::OrderItem &item);
-    void recomputeOrderTotals(domain::Order &order);
+    [[nodiscard]] static QString statusToString(domain::OrderStatus status);
+    [[nodiscard]] static domain::OrderStatus statusFromString(const QString &value);
+    bool loadFromDatabase();
+    bool persistState(const QVector<domain::Order> &orders,
+                      const QHash<QString, QVector<domain::OrderItem>> &orderItemsByOrder,
+                      const QVector<StockAllocation> &stockAllocations,
+                      QString &errorMessage) const;
+    void recomputeNextOrderSerial();
     QString nextOrderNo();
 
-    const infra::db::DatabaseService &m_databaseService;
+    infra::db::DatabaseService &m_databaseService;
     const CustomerService &m_customerService;
     ProductService &m_productService;
 

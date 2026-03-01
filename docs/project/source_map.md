@@ -37,7 +37,7 @@ src/stockmaster/
   - `ReportService`: tổng hợp sales/debt/movement report và export CSV/PDF.
 
 - `infra/db/`
-  - `DatabaseService`: contract sẵn sàng DB (hiện placeholder).
+  - `DatabaseService`: mở kết nối `QSQLITE`, bootstrap schema local, quản lý transaction lồng nhau mức đơn giản.
 
 - `ui/viewmodels/`
   - map nghiệp vụ sang API dễ bind cho QML (`AppViewModel`, `CustomersViewModel`, `ProductsViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ReportsViewModel`).
@@ -52,10 +52,10 @@ src/stockmaster/
 
 `main.cpp` khởi tạo theo thứ tự:
 1. `DatabaseService`
-2. `CustomerService`
-3. `ProductService`
-4. `OrderService`
-5. `PaymentService`
+2. `CustomerService` (load/seed khách từ SQLite)
+3. `ProductService` (load/seed sản phẩm, lô, movement từ SQLite)
+4. `OrderService` (load đơn, dòng đơn, allocation từ SQLite)
+5. `PaymentService` (load phiếu thu từ SQLite)
 6. `ReportService`
 7. `AppViewModel`, `CustomersViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ProductsViewModel`, `ReportsViewModel`
 8. expose vào QML context (`appViewModel`, `customersViewModel`, `inventoryViewModel`, `ordersViewModel`, `paymentsViewModel`, `productsViewModel`, `reportsViewModel`)

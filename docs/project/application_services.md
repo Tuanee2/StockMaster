@@ -6,7 +6,14 @@
   - `initialize()`
   - `isReady()`
   - `backendName()`
-- Trạng thái: placeholder cho SQLite local-first.
+  - `databaseFilePath()`
+  - `lastError()`
+  - `database()`
+  - `beginTransaction() / commitTransaction() / rollbackTransaction()`
+- Trạng thái:
+  - mở kết nối `QSQLITE` thật
+  - bootstrap schema local version 1
+  - giữ transaction depth đơn giản để các service có thể lồng transaction mức cơ bản
 
 ## 2) CustomerService
 
@@ -15,7 +22,9 @@
 - Kiểm tra tồn tại (`customerExists`), lấy tên theo id.
 - CRUD khách hàng.
 - Sinh mã tự động dạng `KH0001`, `KH0002`, ...
-- Seed dữ liệu mẫu khi khởi tạo service.
+- Load dữ liệu từ bảng `customers` khi khởi tạo.
+- Nếu DB đang trống: seed dữ liệu mẫu và ghi luôn vào SQLite.
+- Ghi snapshot bảng `customers` xuống SQLite sau mỗi thay đổi.
 
 ### Validation chính
 - Tên khách bắt buộc.
@@ -33,6 +42,12 @@
 - Tính tồn tổng theo sản phẩm (`totalOnHandByProduct`).
 - Đếm sản phẩm sắp hết hàng (`lowStockProductCount`).
 - Đếm mặt hàng có lô sắp hết hạn trong vòng 30 ngày (`expiringSoonProductCount`).
+- Load dữ liệu từ:
+  - `products`
+  - `product_lots`
+  - `inventory_movements`
+- Khi DB trống: seed dữ liệu mẫu + ghi xuống SQLite.
+- Ghi snapshot 3 bảng trên sau mỗi thay đổi.
 
 ### Quy tắc chính
 - SKU chuẩn hóa uppercase, bỏ khoảng trắng.
@@ -60,6 +75,11 @@
 - Xóa item draft (`removeDraftItem`).
 - Confirm order (`confirmOrder`) -> trừ kho theo lô.
 - Void order (`voidOrder`) -> hoàn kho (nếu đơn đã confirm).
+- Load dữ liệu từ:
+  - `orders`
+  - `order_items`
+  - `stock_allocations`
+- Ghi snapshot 3 bảng trên khi thay đổi trạng thái/order lines.
 - Tải dashboard metrics (`loadDashboardMetrics`).
   - gồm cả cảnh báo mặt hàng có lô sắp hết hạn trong 30 ngày.
 
@@ -91,7 +111,11 @@
 - Lấy danh sách đơn còn phải thu theo khách (`findPayableOrdersByCustomer`).
 - Lấy toàn bộ phiếu thu đã lập (`findAllPayments`) để phục vụ dashboard/analytics.
 - Lập phiếu thu (`createReceipt`).
-- Lưu lịch sử phiếu thu in-memory.
+- Load dữ liệu từ bảng `payments`.
+- Ghi snapshot bảng `payments` sau khi lập phiếu thu.
+- Khi lập phiếu thu:
+  - cập nhật order trong memory
+  - ghi `orders` + `payments` trong cùng transaction DB
 - Dựng ledger đối soát theo khách (`findLedgerByCustomer`) từ:
   - bút toán phát sinh công nợ của đơn
   - bút toán giảm công nợ từ phiếu thu
@@ -135,7 +159,7 @@
 
 ## 7) Giới hạn hiện tại
 
-- Service layer dùng in-memory vector/hash.
-- Chưa có transaction DB thật sự.
-- Phiếu thu và ledger hiện chưa persistence xuống SQLite.
-- Inventory movement hiện cũng mới ở mức in-memory.
+- Service layer vẫn giữ cache in-memory để bind UI nhanh.
+- Dữ liệu lõi đã persistence xuống SQLite local.
+- `DebtLedger` hiện vẫn là dữ liệu suy diễn, chưa lưu bảng riêng.
+- Cơ chế persistence hiện là rewrite snapshot toàn bảng, chưa tối ưu theo row diff/query repo riêng.

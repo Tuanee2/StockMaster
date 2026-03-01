@@ -40,34 +40,43 @@
   - chống over-payment
   - tự cập nhật trạng thái `PartiallyPaid` / `Paid`
   - đối soát ledger theo khách
+- SQLite local persistence:
+  - customer / product / lot / inventory movement
+  - order / order item / stock allocation
+  - payment
 - Smoke test:
   - `report_service_smoke`
+  - `sqlite_persistence_smoke`
   - `dashboard_view_model_smoke`
   - `inventory_service_smoke`
   - `payment_service_smoke`
 
-## 2) Feature mới thêm gần nhất (Reports)
+## 2) Feature mới thêm gần nhất (SQLite persistence)
 
-- Thay `ReportsScreen` placeholder bằng flow thật
-- Thêm `ReportService`
-- Thêm `ReportsViewModel`
-- Thêm export `CSV/PDF` cho từng nhóm báo cáo
-- Nút `Làm mới` ở shell sẽ refresh thêm `Reports` khi đang đứng ở tab này
+- Thay `DatabaseService` placeholder bằng kết nối `QSQLITE` thật
+- Thêm bootstrap schema local cho:
+  - customers
+  - products / product_lots / inventory_movements
+  - orders / order_items / stock_allocations
+  - payments
+- `CustomerService`, `ProductService`, `OrderService`, `PaymentService` giờ load dữ liệu từ SQLite khi khởi tạo
+- Các thao tác CRUD/nghiệp vụ chính sẽ ghi snapshot dữ liệu xuống file SQLite local
+- Thêm `sqlite_persistence_smoke` để kiểm tra mở lại service vẫn đọc được dữ liệu đã ghi
 
 ## 3) Giới hạn kỹ thuật hiện tại
 
-- Dữ liệu in-memory, chưa persistence thật qua SQLite tables.
-- `DatabaseService` mới là bootstrap placeholder.
-- Payment/debt hiện mới chạy ở mức in-memory, chưa lưu xuống DB.
-- Inventory movement cũng mới ở mức in-memory.
+- Service layer vẫn giữ cache in-memory để phục vụ UI, nhưng đã có persistence thật xuống SQLite.
+- `DebtLedger` vẫn là dữ liệu suy diễn, chưa có bảng lưu riêng.
 - Dashboard chart, ranking và report hiện đều là tổng hợp in-memory từ dữ liệu hiện có.
 - Report export PDF hiện là bản PDF text-based đơn giản, chưa có layout in ấn nâng cao.
+- Chưa có DB worker thread riêng; hiện query/ghi vẫn chạy đồng bộ trên luồng gọi.
+- Chưa có migration versioned nhiều bước, mới ở mức bootstrap schema version 1.
 
 ## 4) Đề xuất thứ tự triển khai tiếp theo
 
-1. Hoàn thiện `infra/db` với schema + repository + migration.
-2. Chuyển `CustomerService/ProductService/OrderService` từ in-memory sang repository.
-3. Persistence `PaymentService` + ledger + inventory movement xuống SQLite.
+1. Tách dần persistence từ snapshot rewrite sang repository/query theo bảng để giảm chi phí ghi toàn bảng.
+2. Thêm bảng `debt_ledger` thật nếu muốn đối soát lịch sử độc lập với dữ liệu suy diễn.
+3. Đưa DB access sang worker thread hoặc connection riêng theo thread để tránh block UI khi dữ liệu lớn.
 4. Bổ sung test cho:
    - confirm/void order
    - stock in/out + inventory adjustment edge cases

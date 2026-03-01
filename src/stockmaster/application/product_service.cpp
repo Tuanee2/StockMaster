@@ -3,15 +3,64 @@
 #include <QDate>
 #include <QRegularExpression>
 #include <QSet>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QUuid>
 
 #include <algorithm>
 
+#include "stockmaster/infra/db/database_service.h"
+
 namespace stockmaster::application {
 
-ProductService::ProductService()
+namespace {
+
+int nextProductSerial(const QVector<domain::Product> &products)
 {
-    seedSampleData();
+    int maxSerial = 0;
+    for (const domain::Product &product : products) {
+        if (!product.sku.startsWith(QLatin1String("SP"))) {
+            continue;
+        }
+
+        bool ok = false;
+        const int serial = product.sku.mid(2).toInt(&ok);
+        if (ok && serial > maxSerial) {
+            maxSerial = serial;
+        }
+    }
+
+    return maxSerial + 1;
+}
+
+int nextLotSerial(const QVector<domain::ProductLot> &lots)
+{
+    int maxSerial = 0;
+    for (const domain::ProductLot &lot : lots) {
+        if (!lot.lotNo.startsWith(QLatin1Char('L'))) {
+            continue;
+        }
+
+        bool ok = false;
+        const int serial = lot.lotNo.mid(1).toInt(&ok);
+        if (ok && serial > maxSerial) {
+            maxSerial = serial;
+        }
+    }
+
+    return maxSerial + 1;
+}
+
+}
+
+ProductService::ProductService(stockmaster::infra::db::DatabaseService &databaseService)
+    : m_databaseService(databaseService)
+{
+    if (!loadFromDatabase() || m_products.isEmpty()) {
+        seedSampleData();
+    } else {
+        recomputeSerials();
+    }
 }
 
 QVector<domain::Product> ProductService::findProducts(const QString &keyword) const
@@ -237,6 +286,11 @@ int ProductService::lotCountByProduct(const QString &productId) const
     return count;
 }
 
+bool ProductService::saveToDatabase(QString &errorMessage) const
+{
+    return persistState(m_products, m_lots, m_inventoryMovements, errorMessage);
+}
+
 bool ProductService::createProduct(const ProductInput &input, QString &errorMessage)
 {
     const QString name = input.name.trimmed();
@@ -252,10 +306,11 @@ bool ProductService::createProduct(const ProductInput &input, QString &errorMess
 
     const QString unit = input.unit.trimmed().isEmpty() ? QStringLiteral("cai") : input.unit.trimmed();
 
+    int nextSkuSerial = m_nextSkuSerial;
     QString sku = normalizedSku(input.sku);
     if (sku.isEmpty()) {
         do {
-            sku = generateDefaultSku(m_nextSkuSerial++);
+            sku = generateDefaultSku(nextSkuSerial++);
         } while (skuExists(sku));
     }
 
@@ -272,8 +327,15 @@ bool ProductService::createProduct(const ProductInput &input, QString &errorMess
     product.defaultWholesalePriceVnd = input.defaultWholesalePriceVnd;
     product.isActive = input.isActive;
 
-    m_products.push_back(product);
+    QVector<domain::Product> updatedProducts = m_products;
+    updatedProducts.push_back(product);
 
+    if (!persistState(updatedProducts, m_lots, m_inventoryMovements, errorMessage)) {
+        return false;
+    }
+
+    m_products = updatedProducts;
+    m_nextSkuSerial = nextSkuSerial;
     errorMessage.clear();
     return true;
 }
@@ -312,7 +374,8 @@ bool ProductService::updateProduct(const QString &productId,
 
     const QString unit = input.unit.trimmed().isEmpty() ? QStringLiteral("cai") : input.unit.trimmed();
 
-    for (domain::Product &product : m_products) {
+    QVector<domain::Product> updatedProducts = m_products;
+    for (domain::Product &product : updatedProducts) {
         if (product.id != normalizedId) {
             continue;
         }
@@ -323,6 +386,12 @@ bool ProductService::updateProduct(const QString &productId,
         product.defaultWholesalePriceVnd = input.defaultWholesalePriceVnd;
         product.isActive = input.isActive;
 
+        if (!persistState(updatedProducts, m_lots, m_inventoryMovements, errorMessage)) {
+            return false;
+        }
+
+        m_products = updatedProducts;
+        recomputeSerials();
         errorMessage.clear();
         return true;
     }
@@ -344,37 +413,44 @@ bool ProductService::deleteProduct(const QString &productId, QString &errorMessa
         return false;
     }
 
-    for (qsizetype index = 0; index < m_products.size(); ++index) {
-        if (m_products[index].id != normalizedId) {
-            continue;
-        }
+    QVector<domain::Product> updatedProducts = m_products;
+    const auto productIt = std::find_if(updatedProducts.begin(),
+                                        updatedProducts.end(),
+                                        [&normalizedId](const domain::Product &product) {
+                                            return product.id == normalizedId;
+                                        });
+    if (productIt == updatedProducts.end()) {
+        errorMessage = QStringLiteral("Không tìm thấy sản phẩm cần xóa.");
+        return false;
+    }
+    updatedProducts.erase(productIt);
 
-        m_products.remove(index);
+    QVector<domain::ProductLot> updatedLots = m_lots;
+    updatedLots.erase(
+        std::remove_if(updatedLots.begin(),
+                       updatedLots.end(),
+                       [&normalizedId](const domain::ProductLot &lot) { return lot.productId == normalizedId; }),
+        updatedLots.end());
 
-        for (qsizetype lotIndex = m_lots.size() - 1; lotIndex >= 0; --lotIndex) {
-            if (m_lots[lotIndex].productId == normalizedId) {
-                m_lots.remove(lotIndex);
-            }
+    QVector<domain::InventoryMovement> updatedMovements = m_inventoryMovements;
+    updatedMovements.erase(
+        std::remove_if(updatedMovements.begin(),
+                       updatedMovements.end(),
+                       [&normalizedId](const domain::InventoryMovement &movement) {
+                           return movement.productId == normalizedId;
+                       }),
+        updatedMovements.end());
 
-            if (lotIndex == 0) {
-                break;
-            }
-        }
-
-        m_inventoryMovements.erase(
-            std::remove_if(m_inventoryMovements.begin(),
-                           m_inventoryMovements.end(),
-                           [&normalizedId](const domain::InventoryMovement &movement) {
-                               return movement.productId == normalizedId;
-                           }),
-            m_inventoryMovements.end());
-
-        errorMessage.clear();
-        return true;
+    if (!persistState(updatedProducts, updatedLots, updatedMovements, errorMessage)) {
+        return false;
     }
 
-    errorMessage = QStringLiteral("Không tìm thấy sản phẩm cần xóa.");
-    return false;
+    m_products = updatedProducts;
+    m_lots = updatedLots;
+    m_inventoryMovements = updatedMovements;
+    recomputeSerials();
+    errorMessage.clear();
+    return true;
 }
 
 bool ProductService::addLot(const QString &productId,
@@ -410,10 +486,11 @@ bool ProductService::addLot(const QString &productId,
         return false;
     }
 
+    int nextLotSerial = m_nextLotSerial;
     QString lotNo = normalizedLotNo(input.lotNo);
     if (lotNo.isEmpty()) {
         do {
-            lotNo = generateDefaultLotNo(m_nextLotSerial++);
+            lotNo = generateDefaultLotNo(nextLotSerial++);
         } while (lotNoExists(normalizedProductId, lotNo));
     }
 
@@ -463,13 +540,24 @@ bool ProductService::addLot(const QString &productId,
     lot.unitCostVnd = input.unitCostVnd;
     lot.onHandQty = input.initialQty;
 
-    m_lots.push_back(lot);
-    appendInventoryMovement(lot,
+    QVector<domain::ProductLot> updatedLots = m_lots;
+    updatedLots.push_back(lot);
+
+    QVector<domain::InventoryMovement> updatedMovements = m_inventoryMovements;
+    appendInventoryMovement(updatedMovements,
+                            lot,
                             lot.onHandQty,
                             QStringLiteral("LotCreated"),
                             QStringLiteral("Tạo lô ban đầu"),
                             receivedDate);
 
+    if (!persistState(m_products, updatedLots, updatedMovements, errorMessage)) {
+        return false;
+    }
+
+    m_lots = updatedLots;
+    m_inventoryMovements = updatedMovements;
+    m_nextLotSerial = nextLotSerial;
     errorMessage.clear();
     return true;
 }
@@ -479,7 +567,8 @@ bool ProductService::stockIn(const QString &lotId,
                              QString &errorMessage,
                              const QString &reason,
                              const QString &movementDate,
-                             bool recordMovement)
+                             bool recordMovement,
+                             bool persistChanges)
 {
     const QString normalizedLotId = lotId.trimmed();
     if (normalizedLotId.isEmpty()) {
@@ -492,23 +581,39 @@ bool ProductService::stockIn(const QString &lotId,
         return false;
     }
 
+    QVector<domain::ProductLot> updatedLots = m_lots;
     qsizetype lotIndex = -1;
-    if (!findLotIndex(normalizedLotId, lotIndex)) {
+    for (qsizetype index = 0; index < updatedLots.size(); ++index) {
+        if (updatedLots[index].id == normalizedLotId) {
+            lotIndex = index;
+            break;
+        }
+    }
+
+    if (lotIndex < 0) {
         errorMessage = QStringLiteral("Không tìm thấy lô để nhập hàng.");
         return false;
     }
 
-    domain::ProductLot &lot = m_lots[lotIndex];
+    domain::ProductLot &lot = updatedLots[lotIndex];
     lot.onHandQty += qty;
 
+    QVector<domain::InventoryMovement> updatedMovements = m_inventoryMovements;
     if (recordMovement) {
-        appendInventoryMovement(lot,
+        appendInventoryMovement(updatedMovements,
+                                lot,
                                 qty,
                                 QStringLiteral("StockIn"),
                                 reason.trimmed().isEmpty() ? QStringLiteral("Nhập kho") : reason.trimmed(),
                                 movementDate);
     }
 
+    if (persistChanges && !persistState(m_products, updatedLots, updatedMovements, errorMessage)) {
+        return false;
+    }
+
+    m_lots = updatedLots;
+    m_inventoryMovements = updatedMovements;
     errorMessage.clear();
     return true;
 }
@@ -518,7 +623,8 @@ bool ProductService::stockOut(const QString &lotId,
                               QString &errorMessage,
                               const QString &reason,
                               const QString &movementDate,
-                              bool recordMovement)
+                              bool recordMovement,
+                              bool persistChanges)
 {
     const QString normalizedLotId = lotId.trimmed();
     if (normalizedLotId.isEmpty()) {
@@ -531,13 +637,21 @@ bool ProductService::stockOut(const QString &lotId,
         return false;
     }
 
+    QVector<domain::ProductLot> updatedLots = m_lots;
     qsizetype lotIndex = -1;
-    if (!findLotIndex(normalizedLotId, lotIndex)) {
+    for (qsizetype index = 0; index < updatedLots.size(); ++index) {
+        if (updatedLots[index].id == normalizedLotId) {
+            lotIndex = index;
+            break;
+        }
+    }
+
+    if (lotIndex < 0) {
         errorMessage = QStringLiteral("Không tìm thấy lô để xuất hàng.");
         return false;
     }
 
-    domain::ProductLot &lot = m_lots[lotIndex];
+    domain::ProductLot &lot = updatedLots[lotIndex];
     if (lot.onHandQty < qty) {
         errorMessage = QStringLiteral("Không đủ tồn trong lô để xuất.");
         return false;
@@ -545,14 +659,22 @@ bool ProductService::stockOut(const QString &lotId,
 
     lot.onHandQty -= qty;
 
+    QVector<domain::InventoryMovement> updatedMovements = m_inventoryMovements;
     if (recordMovement) {
-        appendInventoryMovement(lot,
+        appendInventoryMovement(updatedMovements,
+                                lot,
                                 -qty,
                                 QStringLiteral("StockOut"),
                                 reason.trimmed().isEmpty() ? QStringLiteral("Xuất kho") : reason.trimmed(),
                                 movementDate);
     }
 
+    if (persistChanges && !persistState(m_products, updatedLots, updatedMovements, errorMessage)) {
+        return false;
+    }
+
+    m_lots = updatedLots;
+    m_inventoryMovements = updatedMovements;
     errorMessage.clear();
     return true;
 }
@@ -592,13 +714,21 @@ bool ProductService::adjustLotQuantity(const QString &lotId,
         normalizedDate = parsedDate.toString(Qt::ISODate);
     }
 
+    QVector<domain::ProductLot> updatedLots = m_lots;
     qsizetype lotIndex = -1;
-    if (!findLotIndex(normalizedLotId, lotIndex)) {
+    for (qsizetype index = 0; index < updatedLots.size(); ++index) {
+        if (updatedLots[index].id == normalizedLotId) {
+            lotIndex = index;
+            break;
+        }
+    }
+
+    if (lotIndex < 0) {
         errorMessage = QStringLiteral("Không tìm thấy lô để điều chỉnh tồn.");
         return false;
     }
 
-    domain::ProductLot &lot = m_lots[lotIndex];
+    domain::ProductLot &lot = updatedLots[lotIndex];
     const int nextOnHand = lot.onHandQty + qtyDelta;
     if (nextOnHand < 0) {
         errorMessage = QStringLiteral("Không thể điều chỉnh làm tồn kho âm.");
@@ -606,12 +736,21 @@ bool ProductService::adjustLotQuantity(const QString &lotId,
     }
 
     lot.onHandQty = nextOnHand;
-    appendInventoryMovement(lot,
+
+    QVector<domain::InventoryMovement> updatedMovements = m_inventoryMovements;
+    appendInventoryMovement(updatedMovements,
+                            lot,
                             qtyDelta,
                             qtyDelta > 0 ? QStringLiteral("AdjustUp") : QStringLiteral("AdjustDown"),
                             normalizedReason,
                             normalizedDate);
 
+    if (!persistState(m_products, updatedLots, updatedMovements, errorMessage)) {
+        return false;
+    }
+
+    m_lots = updatedLots;
+    m_inventoryMovements = updatedMovements;
     errorMessage.clear();
     return true;
 }
@@ -700,7 +839,8 @@ QString ProductService::generateDefaultLotNo(int serial)
     return QStringLiteral("L%1").arg(serial, 5, 10, QLatin1Char('0'));
 }
 
-void ProductService::appendInventoryMovement(const domain::ProductLot &lot,
+void ProductService::appendInventoryMovement(QVector<domain::InventoryMovement> &movements,
+                                             const domain::ProductLot &lot,
                                              int qtyDelta,
                                              const QString &movementType,
                                              const QString &reason,
@@ -726,7 +866,201 @@ void ProductService::appendInventoryMovement(const domain::ProductLot &lot,
     movement.qtyDelta = qtyDelta;
     movement.lotBalanceAfter = lot.onHandQty;
 
-    m_inventoryMovements.push_back(movement);
+    movements.push_back(movement);
+}
+
+bool ProductService::loadFromDatabase()
+{
+    m_products.clear();
+    m_lots.clear();
+    m_inventoryMovements.clear();
+    recomputeSerials();
+
+    if (!m_databaseService.isReady()) {
+        return false;
+    }
+
+    QSqlQuery productQuery(m_databaseService.database());
+    if (!productQuery.exec(QStringLiteral(
+            "SELECT id, sku, name, unit, default_wholesale_price_vnd, is_active "
+            "FROM products ORDER BY sku ASC;"))) {
+        return false;
+    }
+
+    while (productQuery.next()) {
+        domain::Product product;
+        product.id = productQuery.value(0).toString();
+        product.sku = productQuery.value(1).toString();
+        product.name = productQuery.value(2).toString();
+        product.unit = productQuery.value(3).toString();
+        product.defaultWholesalePriceVnd = productQuery.value(4).toLongLong();
+        product.isActive = productQuery.value(5).toInt() != 0;
+        m_products.push_back(product);
+    }
+
+    QSqlQuery lotQuery(m_databaseService.database());
+    if (!lotQuery.exec(QStringLiteral(
+            "SELECT id, product_id, lot_no, received_date, expiry_date, unit_cost_vnd, on_hand_qty "
+            "FROM product_lots ORDER BY product_id ASC, received_date ASC, lot_no ASC;"))) {
+        return false;
+    }
+
+    while (lotQuery.next()) {
+        domain::ProductLot lot;
+        lot.id = lotQuery.value(0).toString();
+        lot.productId = lotQuery.value(1).toString();
+        lot.lotNo = lotQuery.value(2).toString();
+        lot.receivedDate = lotQuery.value(3).toString();
+        lot.expiryDate = lotQuery.value(4).toString();
+        lot.unitCostVnd = lotQuery.value(5).toLongLong();
+        lot.onHandQty = lotQuery.value(6).toInt();
+        m_lots.push_back(lot);
+    }
+
+    QSqlQuery movementQuery(m_databaseService.database());
+    if (!movementQuery.exec(QStringLiteral(
+            "SELECT id, product_id, lot_id, lot_no, movement_type, reason, movement_date, qty_delta, lot_balance_after "
+            "FROM inventory_movements ORDER BY movement_date ASC, id ASC;"))) {
+        return false;
+    }
+
+    while (movementQuery.next()) {
+        domain::InventoryMovement movement;
+        movement.id = movementQuery.value(0).toString();
+        movement.productId = movementQuery.value(1).toString();
+        movement.lotId = movementQuery.value(2).toString();
+        movement.lotNo = movementQuery.value(3).toString();
+        movement.movementType = movementQuery.value(4).toString();
+        movement.reason = movementQuery.value(5).toString();
+        movement.movementDate = movementQuery.value(6).toString();
+        movement.qtyDelta = movementQuery.value(7).toInt();
+        movement.lotBalanceAfter = movementQuery.value(8).toInt();
+        m_inventoryMovements.push_back(movement);
+    }
+
+    recomputeSerials();
+    return true;
+}
+
+bool ProductService::persistState(const QVector<domain::Product> &products,
+                                  const QVector<domain::ProductLot> &lots,
+                                  const QVector<domain::InventoryMovement> &movements,
+                                  QString &errorMessage) const
+{
+    if (!m_databaseService.isReady()) {
+        errorMessage.clear();
+        return true;
+    }
+
+    if (!m_databaseService.beginTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        return false;
+    }
+
+    auto rollbackWith = [this, &errorMessage](const QString &message) {
+        errorMessage = message;
+        m_databaseService.rollbackTransaction();
+        return false;
+    };
+
+    QSqlQuery clearMovementQuery(m_databaseService.database());
+    if (!clearMovementQuery.exec(QStringLiteral("DELETE FROM inventory_movements;"))) {
+        return rollbackWith(clearMovementQuery.lastError().text());
+    }
+
+    QSqlQuery clearLotQuery(m_databaseService.database());
+    if (!clearLotQuery.exec(QStringLiteral("DELETE FROM product_lots;"))) {
+        return rollbackWith(clearLotQuery.lastError().text());
+    }
+
+    QSqlQuery clearProductQuery(m_databaseService.database());
+    if (!clearProductQuery.exec(QStringLiteral("DELETE FROM products;"))) {
+        return rollbackWith(clearProductQuery.lastError().text());
+    }
+
+    QSqlQuery insertProductQuery(m_databaseService.database());
+    if (!insertProductQuery.prepare(QStringLiteral(
+            "INSERT INTO products("
+            "id, sku, name, unit, default_wholesale_price_vnd, is_active"
+            ") VALUES("
+            ":id, :sku, :name, :unit, :default_wholesale_price_vnd, :is_active"
+            ");"))) {
+        return rollbackWith(insertProductQuery.lastError().text());
+    }
+
+    for (const domain::Product &product : products) {
+        insertProductQuery.bindValue(QStringLiteral(":id"), product.id);
+        insertProductQuery.bindValue(QStringLiteral(":sku"), product.sku);
+        insertProductQuery.bindValue(QStringLiteral(":name"), product.name);
+        insertProductQuery.bindValue(QStringLiteral(":unit"), product.unit);
+        insertProductQuery.bindValue(QStringLiteral(":default_wholesale_price_vnd"),
+                                     product.defaultWholesalePriceVnd);
+        insertProductQuery.bindValue(QStringLiteral(":is_active"), product.isActive ? 1 : 0);
+        if (!insertProductQuery.exec()) {
+            return rollbackWith(insertProductQuery.lastError().text());
+        }
+    }
+
+    QSqlQuery insertLotQuery(m_databaseService.database());
+    if (!insertLotQuery.prepare(QStringLiteral(
+            "INSERT INTO product_lots("
+            "id, product_id, lot_no, received_date, expiry_date, unit_cost_vnd, on_hand_qty"
+            ") VALUES("
+            ":id, :product_id, :lot_no, :received_date, :expiry_date, :unit_cost_vnd, :on_hand_qty"
+            ");"))) {
+        return rollbackWith(insertLotQuery.lastError().text());
+    }
+
+    for (const domain::ProductLot &lot : lots) {
+        insertLotQuery.bindValue(QStringLiteral(":id"), lot.id);
+        insertLotQuery.bindValue(QStringLiteral(":product_id"), lot.productId);
+        insertLotQuery.bindValue(QStringLiteral(":lot_no"), lot.lotNo);
+        insertLotQuery.bindValue(QStringLiteral(":received_date"), lot.receivedDate);
+        insertLotQuery.bindValue(QStringLiteral(":expiry_date"), lot.expiryDate);
+        insertLotQuery.bindValue(QStringLiteral(":unit_cost_vnd"), lot.unitCostVnd);
+        insertLotQuery.bindValue(QStringLiteral(":on_hand_qty"), lot.onHandQty);
+        if (!insertLotQuery.exec()) {
+            return rollbackWith(insertLotQuery.lastError().text());
+        }
+    }
+
+    QSqlQuery insertMovementQuery(m_databaseService.database());
+    if (!insertMovementQuery.prepare(QStringLiteral(
+            "INSERT INTO inventory_movements("
+            "id, product_id, lot_id, lot_no, movement_type, reason, movement_date, qty_delta, lot_balance_after"
+            ") VALUES("
+            ":id, :product_id, :lot_id, :lot_no, :movement_type, :reason, :movement_date, :qty_delta, :lot_balance_after"
+            ");"))) {
+        return rollbackWith(insertMovementQuery.lastError().text());
+    }
+
+    for (const domain::InventoryMovement &movement : movements) {
+        insertMovementQuery.bindValue(QStringLiteral(":id"), movement.id);
+        insertMovementQuery.bindValue(QStringLiteral(":product_id"), movement.productId);
+        insertMovementQuery.bindValue(QStringLiteral(":lot_id"), movement.lotId);
+        insertMovementQuery.bindValue(QStringLiteral(":lot_no"), movement.lotNo);
+        insertMovementQuery.bindValue(QStringLiteral(":movement_type"), movement.movementType);
+        insertMovementQuery.bindValue(QStringLiteral(":reason"), movement.reason);
+        insertMovementQuery.bindValue(QStringLiteral(":movement_date"), movement.movementDate);
+        insertMovementQuery.bindValue(QStringLiteral(":qty_delta"), movement.qtyDelta);
+        insertMovementQuery.bindValue(QStringLiteral(":lot_balance_after"), movement.lotBalanceAfter);
+        if (!insertMovementQuery.exec()) {
+            return rollbackWith(insertMovementQuery.lastError().text());
+        }
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        return rollbackWith(m_databaseService.lastError());
+    }
+
+    errorMessage.clear();
+    return true;
+}
+
+void ProductService::recomputeSerials()
+{
+    m_nextSkuSerial = nextProductSerial(m_products);
+    m_nextLotSerial = nextLotSerial(m_lots);
 }
 
 void ProductService::seedSampleData()
@@ -782,8 +1116,6 @@ void ProductService::seedSampleData()
                                      468000},
                      ignoredError);
     }
-
-    m_nextSkuSerial = m_products.size() + 1;
 }
 
 } // namespace stockmaster::application

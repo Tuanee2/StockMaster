@@ -18,7 +18,7 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
 - UI: Qt Quick / QML
 - Logic: C++17
 - Build: CMake + Qt6
-- DB layer: `DatabaseService` dạng placeholder (đã có contract `initialize/isReady`)
+- DB layer: SQLite local-first qua `DatabaseService` (đã mở file DB thật + bootstrap schema)
 
 ## 3) Trạng thái triển khai hiện tại
 
@@ -64,9 +64,8 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - đối soát ledger theo khách
 
 Chưa triển khai đầy đủ:
-- persistence SQLite thực sự
-- debt ledger hiện mới ở mức in-memory reconciliation, chưa persistence
-- report hiện vẫn là tổng hợp in-memory, chưa có repository/report DB riêng
+- debt ledger hiện vẫn là đối soát suy diễn từ order/payment, chưa lưu bảng riêng
+- report hiện vẫn là tổng hợp từ cache service, chưa có repository/report query tối ưu riêng
 - sync
 
 ## 4) Kiến trúc thực thi hiện tại
@@ -76,4 +75,7 @@ Chưa triển khai đầy đủ:
 - `Application Service` xử lý nghiệp vụ và kiểm tra dữ liệu
 - `Domain` là cấu trúc dữ liệu nghiệp vụ
 
-Lưu ý: dữ liệu hiện tại ở memory (seed data), chưa ghi xuống DB.
+Lưu ý:
+- `CustomerService`, `ProductService`, `OrderService`, `PaymentService` hiện load cache từ SQLite khi khởi tạo.
+- Thao tác CRUD/nghiệp vụ sẽ ghi lại snapshot bảng vào file SQLite local.
+- Nếu DB chưa sẵn sàng, service vẫn fallback chạy in-memory để app không chết cứng.

@@ -1,20 +1,48 @@
 #include "stockmaster/application/payment_service.h"
 
 #include <QDate>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QUuid>
 
 #include <algorithm>
 
 #include "stockmaster/application/customer_service.h"
 #include "stockmaster/application/order_service.h"
+#include "stockmaster/infra/db/database_service.h"
 
 namespace stockmaster::application {
 
-PaymentService::PaymentService(OrderService &orderService,
+namespace {
+
+int nextPaymentSerial(const QVector<domain::Payment> &payments)
+{
+    int maxSerial = 0;
+    for (const domain::Payment &payment : payments) {
+        if (!payment.paymentNo.startsWith(QLatin1String("PT"))) {
+            continue;
+        }
+
+        bool ok = false;
+        const int serial = payment.paymentNo.mid(2).toInt(&ok);
+        if (ok && serial > maxSerial) {
+            maxSerial = serial;
+        }
+    }
+
+    return maxSerial + 1;
+}
+
+}
+
+PaymentService::PaymentService(stockmaster::infra::db::DatabaseService &databaseService,
+                               OrderService &orderService,
                                const CustomerService &customerService)
-    : m_orderService(orderService)
+    : m_databaseService(databaseService)
+    , m_orderService(orderService)
     , m_customerService(customerService)
 {
+    (void)loadFromDatabase();
 }
 
 QVector<CustomerReceivableSummary> PaymentService::findCustomerReceivables(const QString &keyword) const
@@ -268,22 +296,50 @@ bool PaymentService::createReceipt(const QString &customerId,
         normalizedPaidAt = paidDate.toString(Qt::ISODate);
     }
 
+    const domain::Order previousOrder = order;
     QString applyError;
-    if (!m_orderService.applyPayment(normalizedOrderId, amountVnd, applyError)) {
+    if (!m_orderService.applyPayment(normalizedOrderId, amountVnd, applyError, false)) {
         errorMessage = applyError;
         return false;
     }
 
+    int nextSerial = m_nextPaymentSerial;
     domain::Payment payment;
     payment.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    payment.paymentNo = nextPaymentNo();
+    payment.paymentNo = QStringLiteral("PT%1").arg(nextSerial++, 5, 10, QLatin1Char('0'));
     payment.customerId = normalizedCustomerId;
     payment.orderId = normalizedOrderId;
     payment.amountVnd = amountVnd;
     payment.method = method.trimmed().isEmpty() ? QStringLiteral("Tien mat") : method.trimmed();
     payment.paidAt = normalizedPaidAt;
 
-    m_payments.push_back(payment);
+    QVector<domain::Payment> updatedPayments = m_payments;
+    updatedPayments.push_back(payment);
+
+    if (!m_databaseService.beginTransaction()) {
+        m_orderService.restoreOrderSnapshot(previousOrder);
+        errorMessage = m_databaseService.lastError();
+        return false;
+    }
+
+    QString persistenceError;
+    if (!m_orderService.saveToDatabase(persistenceError)
+        || !persistPayments(updatedPayments, persistenceError)) {
+        m_databaseService.rollbackTransaction();
+        m_orderService.restoreOrderSnapshot(previousOrder);
+        errorMessage = persistenceError;
+        return false;
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        m_databaseService.rollbackTransaction();
+        m_orderService.restoreOrderSnapshot(previousOrder);
+        errorMessage = m_databaseService.lastError();
+        return false;
+    }
+
+    m_payments = updatedPayments;
+    m_nextPaymentSerial = nextSerial;
     errorMessage.clear();
     return true;
 }
@@ -291,6 +347,97 @@ bool PaymentService::createReceipt(const QString &customerId,
 QString PaymentService::nextPaymentNo()
 {
     return QStringLiteral("PT%1").arg(m_nextPaymentSerial++, 5, 10, QLatin1Char('0'));
+}
+
+bool PaymentService::loadFromDatabase()
+{
+    m_payments.clear();
+    m_nextPaymentSerial = 1;
+
+    if (!m_databaseService.isReady()) {
+        return false;
+    }
+
+    QSqlQuery query(m_databaseService.database());
+    if (!query.exec(QStringLiteral(
+            "SELECT id, payment_no, customer_id, order_id, amount_vnd, method, paid_at "
+            "FROM payments ORDER BY paid_at ASC, payment_no ASC;"))) {
+        return false;
+    }
+
+    while (query.next()) {
+        domain::Payment payment;
+        payment.id = query.value(0).toString();
+        payment.paymentNo = query.value(1).toString();
+        payment.customerId = query.value(2).toString();
+        payment.orderId = query.value(3).toString();
+        payment.amountVnd = query.value(4).toLongLong();
+        payment.method = query.value(5).toString();
+        payment.paidAt = query.value(6).toString();
+        m_payments.push_back(payment);
+    }
+
+    recomputeNextPaymentSerial();
+    return true;
+}
+
+bool PaymentService::persistPayments(const QVector<domain::Payment> &payments, QString &errorMessage) const
+{
+    if (!m_databaseService.isReady()) {
+        errorMessage.clear();
+        return true;
+    }
+
+    if (!m_databaseService.beginTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        return false;
+    }
+
+    auto rollbackWith = [this, &errorMessage](const QString &message) {
+        errorMessage = message;
+        m_databaseService.rollbackTransaction();
+        return false;
+    };
+
+    QSqlQuery clearQuery(m_databaseService.database());
+    if (!clearQuery.exec(QStringLiteral("DELETE FROM payments;"))) {
+        return rollbackWith(clearQuery.lastError().text());
+    }
+
+    QSqlQuery insertQuery(m_databaseService.database());
+    if (!insertQuery.prepare(QStringLiteral(
+            "INSERT INTO payments("
+            "id, payment_no, customer_id, order_id, amount_vnd, method, paid_at"
+            ") VALUES("
+            ":id, :payment_no, :customer_id, :order_id, :amount_vnd, :method, :paid_at"
+            ");"))) {
+        return rollbackWith(insertQuery.lastError().text());
+    }
+
+    for (const domain::Payment &payment : payments) {
+        insertQuery.bindValue(QStringLiteral(":id"), payment.id);
+        insertQuery.bindValue(QStringLiteral(":payment_no"), payment.paymentNo);
+        insertQuery.bindValue(QStringLiteral(":customer_id"), payment.customerId);
+        insertQuery.bindValue(QStringLiteral(":order_id"), payment.orderId);
+        insertQuery.bindValue(QStringLiteral(":amount_vnd"), payment.amountVnd);
+        insertQuery.bindValue(QStringLiteral(":method"), payment.method);
+        insertQuery.bindValue(QStringLiteral(":paid_at"), payment.paidAt);
+        if (!insertQuery.exec()) {
+            return rollbackWith(insertQuery.lastError().text());
+        }
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        return rollbackWith(m_databaseService.lastError());
+    }
+
+    errorMessage.clear();
+    return true;
+}
+
+void PaymentService::recomputeNextPaymentSerial()
+{
+    m_nextPaymentSerial = nextPaymentSerial(m_payments);
 }
 
 } // namespace stockmaster::application

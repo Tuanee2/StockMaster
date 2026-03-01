@@ -23,10 +23,10 @@ int main(int argc, char *argv[])
     stockmaster::infra::db::DatabaseService databaseService;
     databaseService.initialize();
 
-    stockmaster::application::CustomerService customerService;
-    stockmaster::application::ProductService productService;
+    stockmaster::application::CustomerService customerService(databaseService);
+    stockmaster::application::ProductService productService(databaseService);
     stockmaster::application::OrderService orderService(databaseService, customerService, productService);
-    stockmaster::application::PaymentService paymentService(orderService, customerService);
+    stockmaster::application::PaymentService paymentService(databaseService, orderService, customerService);
     stockmaster::application::ReportService reportService(orderService,
                                                           paymentService,
                                                           customerService,

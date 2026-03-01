@@ -1,6 +1,9 @@
 #include <cassert>
 
+#include <QCoreApplication>
 #include <QDate>
+#include <QDir>
+#include <QFile>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -11,17 +14,22 @@
 #include "stockmaster/infra/db/database_service.h"
 #include "stockmaster/ui/viewmodels/app_view_model.h"
 
-int main()
+int main(int argc, char *argv[])
 {
     using namespace stockmaster;
 
-    infra::db::DatabaseService databaseService;
+    QCoreApplication app(argc, argv);
+
+    const QString dbPath = QDir::temp().filePath(QStringLiteral("stockmaster_dashboard_view_model_smoke.sqlite"));
+    QFile::remove(dbPath);
+
+    infra::db::DatabaseService databaseService(dbPath);
     assert(databaseService.initialize());
 
-    application::CustomerService customerService;
-    application::ProductService productService;
+    application::CustomerService customerService(databaseService);
+    application::ProductService productService(databaseService);
     application::OrderService orderService(databaseService, customerService, productService);
-    application::PaymentService paymentService(orderService, customerService);
+    application::PaymentService paymentService(databaseService, orderService, customerService);
     ui::viewmodels::AppViewModel appViewModel(databaseService,
                                               orderService,
                                               paymentService,

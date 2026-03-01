@@ -5,6 +5,10 @@
 
 #include "stockmaster/domain/entities.h"
 
+namespace stockmaster::infra::db {
+class DatabaseService;
+}
+
 namespace stockmaster::application {
 
 struct ProductInput {
@@ -25,7 +29,7 @@ struct ProductLotInput {
 
 class ProductService {
 public:
-    ProductService();
+    explicit ProductService(stockmaster::infra::db::DatabaseService &databaseService);
 
     [[nodiscard]] QVector<domain::Product> findProducts(const QString &keyword = {}) const;
     [[nodiscard]] QVector<domain::InventoryMovement> findAllInventoryMovements() const;
@@ -40,6 +44,7 @@ public:
     [[nodiscard]] int expiringSoonProductCount(int warningDays = 30) const;
     [[nodiscard]] int totalOnHandByProduct(const QString &productId) const;
     [[nodiscard]] int lotCountByProduct(const QString &productId) const;
+    [[nodiscard]] bool saveToDatabase(QString &errorMessage) const;
 
     [[nodiscard]] bool createProduct(const ProductInput &input, QString &errorMessage);
     [[nodiscard]] bool updateProduct(const QString &productId,
@@ -55,13 +60,15 @@ public:
                                QString &errorMessage,
                                const QString &reason = {},
                                const QString &movementDate = {},
-                               bool recordMovement = true);
+                               bool recordMovement = true,
+                               bool persistState = true);
     [[nodiscard]] bool stockOut(const QString &lotId,
                                 int qty,
                                 QString &errorMessage,
                                 const QString &reason = {},
                                 const QString &movementDate = {},
-                                bool recordMovement = true);
+                                bool recordMovement = true,
+                                bool persistState = true);
     [[nodiscard]] bool adjustLotQuantity(const QString &lotId,
                                          int qtyDelta,
                                          const QString &reason,
@@ -80,14 +87,22 @@ private:
     [[nodiscard]] static QString normalizedLotNo(const QString &lotNo);
     [[nodiscard]] static QString generateDefaultSku(int serial);
     [[nodiscard]] static QString generateDefaultLotNo(int serial);
-    void appendInventoryMovement(const domain::ProductLot &lot,
-                                 int qtyDelta,
-                                 const QString &movementType,
-                                 const QString &reason,
-                                 const QString &movementDate);
+    static void appendInventoryMovement(QVector<domain::InventoryMovement> &movements,
+                                        const domain::ProductLot &lot,
+                                        int qtyDelta,
+                                        const QString &movementType,
+                                        const QString &reason,
+                                        const QString &movementDate);
+    bool loadFromDatabase();
+    bool persistState(const QVector<domain::Product> &products,
+                      const QVector<domain::ProductLot> &lots,
+                      const QVector<domain::InventoryMovement> &movements,
+                      QString &errorMessage) const;
+    void recomputeSerials();
 
     void seedSampleData();
 
+    stockmaster::infra::db::DatabaseService &m_databaseService;
     QVector<domain::Product> m_products;
     QVector<domain::ProductLot> m_lots;
     QVector<domain::InventoryMovement> m_inventoryMovements;

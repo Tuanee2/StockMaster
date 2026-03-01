@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(CTest)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql)
 
 qt_standard_project_setup(REQUIRES 6.5)
 qt_policy(SET QTP0004 NEW)
@@ -77,7 +77,9 @@ set_target_properties(appStockMaster PROPERTIES
 )
 
 target_link_libraries(appStockMaster
-    PRIVATE Qt6::Quick
+    PRIVATE
+        Qt6::Quick
+        Qt6::Sql
 )
 
 include(GNUInstallDirs)
@@ -104,10 +106,34 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(report_service_smoke
-        PRIVATE Qt6::Quick
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
     )
 
     add_test(NAME report_service_smoke COMMAND report_service_smoke)
+
+    add_executable(sqlite_persistence_smoke
+        tests/sqlite_persistence_smoke.cpp
+        src/stockmaster/application/customer_service.cpp
+        src/stockmaster/application/order_service.cpp
+        src/stockmaster/application/payment_service.cpp
+        src/stockmaster/application/product_service.cpp
+        src/stockmaster/infra/db/database_service.cpp
+    )
+
+    target_include_directories(sqlite_persistence_smoke
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(sqlite_persistence_smoke
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
+    )
+
+    add_test(NAME sqlite_persistence_smoke COMMAND sqlite_persistence_smoke)
 
     add_executable(dashboard_view_model_smoke
         tests/dashboard_view_model_smoke.cpp
@@ -125,7 +151,9 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(dashboard_view_model_smoke
-        PRIVATE Qt6::Quick
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
     )
 
     add_test(NAME dashboard_view_model_smoke COMMAND dashboard_view_model_smoke)
@@ -133,6 +161,7 @@ if(BUILD_TESTING)
     add_executable(inventory_service_smoke
         tests/inventory_service_smoke.cpp
         src/stockmaster/application/product_service.cpp
+        src/stockmaster/infra/db/database_service.cpp
     )
 
     target_include_directories(inventory_service_smoke
@@ -141,7 +170,9 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(inventory_service_smoke
-        PRIVATE Qt6::Quick
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
     )
 
     add_test(NAME inventory_service_smoke COMMAND inventory_service_smoke)
@@ -161,7 +192,9 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(payment_service_smoke
-        PRIVATE Qt6::Quick
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
     )
 
     add_test(NAME payment_service_smoke COMMAND payment_service_smoke)

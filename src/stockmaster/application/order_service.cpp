@@ -1,6 +1,8 @@
 #include "stockmaster/application/order_service.h"
 
 #include <QDate>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QUuid>
 
 #include <algorithm>
@@ -11,13 +13,36 @@
 
 namespace stockmaster::application {
 
-OrderService::OrderService(const infra::db::DatabaseService &databaseService,
+namespace {
+
+int nextOrderSerial(const QVector<domain::Order> &orders)
+{
+    int maxSerial = 0;
+    for (const domain::Order &order : orders) {
+        if (!order.orderNo.startsWith(QLatin1String("ORD"))) {
+            continue;
+        }
+
+        bool ok = false;
+        const int serial = order.orderNo.mid(3).toInt(&ok);
+        if (ok && serial > maxSerial) {
+            maxSerial = serial;
+        }
+    }
+
+    return maxSerial + 1;
+}
+
+}
+
+OrderService::OrderService(infra::db::DatabaseService &databaseService,
                            const CustomerService &customerService,
                            ProductService &productService)
     : m_databaseService(databaseService)
     , m_customerService(customerService)
     , m_productService(productService)
 {
+    (void)loadFromDatabase();
 }
 
 domain::DashboardMetrics OrderService::loadDashboardMetrics() const
@@ -90,6 +115,21 @@ int OrderService::openOrderCount() const
     return count;
 }
 
+bool OrderService::saveToDatabase(QString &errorMessage) const
+{
+    return persistState(m_orders, m_orderItemsByOrder, m_stockAllocations, errorMessage);
+}
+
+void OrderService::restoreOrderSnapshot(const domain::Order &orderSnapshot)
+{
+    for (domain::Order &order : m_orders) {
+        if (order.id == orderSnapshot.id) {
+            order = orderSnapshot;
+            return;
+        }
+    }
+}
+
 bool OrderService::createDraftOrder(const QString &customerId,
                                     const QString &orderDate,
                                     QString &orderIdOut,
@@ -106,22 +146,30 @@ bool OrderService::createDraftOrder(const QString &customerId,
         return false;
     }
 
+    int nextOrderSerial = m_nextOrderSerial;
+
     domain::Order order;
     order.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    order.orderNo = nextOrderNo();
+    order.orderNo = QStringLiteral("ORD%1").arg(nextOrderSerial++, 5, 10, QLatin1Char('0'));
     order.customerId = normalizedCustomerId;
     order.orderDate = orderDate.trimmed().isEmpty()
         ? QDate::currentDate().toString(Qt::ISODate)
         : orderDate.trimmed();
     order.status = domain::OrderStatus::Draft;
-    order.subtotalVnd = 0;
-    order.discountVnd = 0;
-    order.totalVnd = 0;
-    order.paidVnd = 0;
-    order.balanceVnd = 0;
 
-    m_orders.push_back(order);
-    m_orderItemsByOrder.insert(order.id, {});
+    QVector<domain::Order> updatedOrders = m_orders;
+    updatedOrders.push_back(order);
+
+    QHash<QString, QVector<domain::OrderItem>> updatedItemsByOrder = m_orderItemsByOrder;
+    updatedItemsByOrder.insert(order.id, {});
+
+    if (!persistState(updatedOrders, updatedItemsByOrder, m_stockAllocations, errorMessage)) {
+        return false;
+    }
+
+    m_orders = updatedOrders;
+    m_orderItemsByOrder = updatedItemsByOrder;
+    m_nextOrderSerial = nextOrderSerial;
 
     orderIdOut = order.id;
     errorMessage.clear();
@@ -138,8 +186,8 @@ bool OrderService::updateDraftOrderCustomer(const QString &orderId,
         return false;
     }
 
-    domain::Order &order = m_orders[index];
-    if (!canEditDraft(order, errorMessage)) {
+    const domain::Order &currentOrder = m_orders[index];
+    if (!canEditDraft(currentOrder, errorMessage)) {
         return false;
     }
 
@@ -149,7 +197,14 @@ bool OrderService::updateDraftOrderCustomer(const QString &orderId,
         return false;
     }
 
-    order.customerId = normalizedCustomerId;
+    QVector<domain::Order> updatedOrders = m_orders;
+    updatedOrders[index].customerId = normalizedCustomerId;
+
+    if (!persistState(updatedOrders, m_orderItemsByOrder, m_stockAllocations, errorMessage)) {
+        return false;
+    }
+
+    m_orders = updatedOrders;
     errorMessage.clear();
     return true;
 }
@@ -164,8 +219,8 @@ bool OrderService::upsertDraftItem(const QString &orderId,
         return false;
     }
 
-    domain::Order &order = m_orders[index];
-    if (!canEditDraft(order, errorMessage)) {
+    const domain::Order &currentOrder = m_orders[index];
+    if (!canEditDraft(currentOrder, errorMessage)) {
         return false;
     }
 
@@ -196,8 +251,11 @@ bool OrderService::upsertDraftItem(const QString &orderId,
         return false;
     }
 
-    QVector<domain::OrderItem> &items = m_orderItemsByOrder[order.id];
+    QVector<domain::Order> updatedOrders = m_orders;
+    QHash<QString, QVector<domain::OrderItem>> updatedItemsByOrder = m_orderItemsByOrder;
+    QVector<domain::OrderItem> &items = updatedItemsByOrder[orderId.trimmed()];
 
+    bool foundExisting = false;
     for (domain::OrderItem &item : items) {
         if (item.productId != normalizedProductId) {
             continue;
@@ -207,23 +265,29 @@ bool OrderService::upsertDraftItem(const QString &orderId,
         item.unitPriceVnd = input.unitPriceVnd;
         item.discountVnd = input.discountVnd;
         item.lineTotalVnd = lineSubtotal - input.discountVnd;
-
-        recomputeOrderTotals(order);
-        errorMessage.clear();
-        return true;
+        foundExisting = true;
+        break;
     }
 
-    domain::OrderItem item;
-    item.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    item.productId = normalizedProductId;
-    item.qty = input.qty;
-    item.unitPriceVnd = input.unitPriceVnd;
-    item.discountVnd = input.discountVnd;
-    item.lineTotalVnd = lineSubtotal - input.discountVnd;
+    if (!foundExisting) {
+        domain::OrderItem item;
+        item.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        item.productId = normalizedProductId;
+        item.qty = input.qty;
+        item.unitPriceVnd = input.unitPriceVnd;
+        item.discountVnd = input.discountVnd;
+        item.lineTotalVnd = lineSubtotal - input.discountVnd;
+        items.push_back(item);
+    }
 
-    items.push_back(item);
-    recomputeOrderTotals(order);
+    recomputeOrderTotals(updatedOrders[index], items);
 
+    if (!persistState(updatedOrders, updatedItemsByOrder, m_stockAllocations, errorMessage)) {
+        return false;
+    }
+
+    m_orders = updatedOrders;
+    m_orderItemsByOrder = updatedItemsByOrder;
     errorMessage.clear();
     return true;
 }
@@ -238,12 +302,13 @@ bool OrderService::removeDraftItem(const QString &orderId,
         return false;
     }
 
-    domain::Order &order = m_orders[index];
-    if (!canEditDraft(order, errorMessage)) {
+    const domain::Order &currentOrder = m_orders[index];
+    if (!canEditDraft(currentOrder, errorMessage)) {
         return false;
     }
 
-    QVector<domain::OrderItem> &items = m_orderItemsByOrder[order.id];
+    QHash<QString, QVector<domain::OrderItem>> updatedItemsByOrder = m_orderItemsByOrder;
+    QVector<domain::OrderItem> &items = updatedItemsByOrder[orderId.trimmed()];
     const QString normalizedOrderItemId = orderItemId.trimmed();
 
     for (qsizetype itemIndex = 0; itemIndex < items.size(); ++itemIndex) {
@@ -252,8 +317,15 @@ bool OrderService::removeDraftItem(const QString &orderId,
         }
 
         items.remove(itemIndex);
-        recomputeOrderTotals(order);
+        QVector<domain::Order> updatedOrders = m_orders;
+        recomputeOrderTotals(updatedOrders[index], items);
 
+        if (!persistState(updatedOrders, updatedItemsByOrder, m_stockAllocations, errorMessage)) {
+            return false;
+        }
+
+        m_orders = updatedOrders;
+        m_orderItemsByOrder = updatedItemsByOrder;
         errorMessage.clear();
         return true;
     }
@@ -290,6 +362,23 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
     appliedAllocations.reserve(plannedAllocations.size());
     const QString confirmReason = QStringLiteral("Xác nhận đơn %1").arg(order.orderNo);
 
+    auto revertAllocatedStock = [this, &appliedAllocations]() {
+        for (qsizetype rollbackIndex = appliedAllocations.size() - 1; rollbackIndex >= 0; --rollbackIndex) {
+            QString rollbackError;
+            (void)m_productService.stockIn(appliedAllocations[rollbackIndex].lotId,
+                                           appliedAllocations[rollbackIndex].qty,
+                                           rollbackError,
+                                           QString(),
+                                           QString(),
+                                           false,
+                                           false);
+
+            if (rollbackIndex == 0) {
+                break;
+            }
+        }
+    };
+
     for (const StockAllocation &allocation : plannedAllocations) {
         QString stockError;
         if (!m_productService.stockOut(allocation.lotId,
@@ -297,21 +386,9 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
                                        stockError,
                                        confirmReason,
                                        order.orderDate,
-                                       true)) {
-            for (qsizetype rollbackIndex = appliedAllocations.size() - 1; rollbackIndex >= 0; --rollbackIndex) {
-                QString rollbackError;
-                (void)m_productService.stockIn(appliedAllocations[rollbackIndex].lotId,
-                                               appliedAllocations[rollbackIndex].qty,
-                                               rollbackError,
-                                               QString(),
-                                               QString(),
-                                               false);
-
-                if (rollbackIndex == 0) {
-                    break;
-                }
-            }
-
+                                       true,
+                                       false)) {
+            revertAllocatedStock();
             errorMessage = QStringLiteral("Xác nhận đơn thất bại khi trừ kho: %1").arg(stockError);
             return false;
         }
@@ -319,12 +396,42 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
         appliedAllocations.push_back(allocation);
     }
 
+    const domain::Order previousOrder = order;
+    const QVector<StockAllocation> previousAllocations = m_stockAllocations;
+
     for (const StockAllocation &allocation : plannedAllocations) {
         m_stockAllocations.push_back(allocation);
     }
 
     order.status = domain::OrderStatus::Confirmed;
-    recomputeOrderTotals(order);
+    recomputeOrderTotals(order, items);
+
+    if (!m_databaseService.beginTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        revertAllocatedStock();
+        return false;
+    }
+
+    QString persistenceError;
+    if (!m_productService.saveToDatabase(persistenceError) || !saveToDatabase(persistenceError)) {
+        m_databaseService.rollbackTransaction();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        revertAllocatedStock();
+        errorMessage = persistenceError;
+        return false;
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        m_databaseService.rollbackTransaction();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        revertAllocatedStock();
+        return false;
+    }
 
     errorMessage.clear();
     return true;
@@ -332,7 +439,8 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
 
 bool OrderService::applyPayment(const QString &orderId,
                                 core::Money amountVnd,
-                                QString &errorMessage)
+                                QString &errorMessage,
+                                bool persistChanges)
 {
     qsizetype index = -1;
     if (!findOrderIndex(orderId, index)) {
@@ -340,7 +448,8 @@ bool OrderService::applyPayment(const QString &orderId,
         return false;
     }
 
-    domain::Order &order = m_orders[index];
+    QVector<domain::Order> updatedOrders = m_orders;
+    domain::Order &order = updatedOrders[index];
 
     if (amountVnd <= 0) {
         errorMessage = QStringLiteral("Số tiền thu phải > 0.");
@@ -373,6 +482,11 @@ bool OrderService::applyPayment(const QString &orderId,
         ? domain::OrderStatus::Paid
         : domain::OrderStatus::PartiallyPaid;
 
+    if (persistChanges && !persistState(updatedOrders, m_orderItemsByOrder, m_stockAllocations, errorMessage)) {
+        return false;
+    }
+
+    m_orders = updatedOrders;
     errorMessage.clear();
     return true;
 }
@@ -390,47 +504,57 @@ bool OrderService::voidOrder(const QString &orderId, QString &errorMessage)
         return false;
     }
 
+    QVector<StockAllocation> allocations;
     if (order.status == domain::OrderStatus::Confirmed) {
-        QVector<StockAllocation> allocations;
         for (const StockAllocation &allocation : m_stockAllocations) {
             if (allocation.orderId == order.id) {
                 allocations.push_back(allocation);
             }
         }
+    }
 
-        QVector<StockAllocation> restoredAllocations;
-        restoredAllocations.reserve(allocations.size());
-        const QString voidReason = QStringLiteral("Void đơn %1").arg(order.orderNo);
+    QVector<StockAllocation> restoredAllocations;
+    restoredAllocations.reserve(allocations.size());
+    const QString voidReason = QStringLiteral("Void đơn %1").arg(order.orderNo);
 
-        for (const StockAllocation &allocation : allocations) {
-            QString stockError;
-            if (!m_productService.stockIn(allocation.lotId,
-                                          allocation.qty,
-                                          stockError,
-                                          voidReason,
-                                          QDate::currentDate().toString(Qt::ISODate),
-                                          true)) {
-                for (qsizetype rollbackIndex = restoredAllocations.size() - 1; rollbackIndex >= 0; --rollbackIndex) {
-                    QString rollbackError;
-                    (void)m_productService.stockOut(restoredAllocations[rollbackIndex].lotId,
-                                                    restoredAllocations[rollbackIndex].qty,
-                                                    rollbackError,
-                                                    QString(),
-                                                    QString(),
-                                                    false);
+    auto undoRestoredStock = [this, &restoredAllocations]() {
+        for (qsizetype rollbackIndex = restoredAllocations.size() - 1; rollbackIndex >= 0; --rollbackIndex) {
+            QString rollbackError;
+            (void)m_productService.stockOut(restoredAllocations[rollbackIndex].lotId,
+                                            restoredAllocations[rollbackIndex].qty,
+                                            rollbackError,
+                                            QString(),
+                                            QString(),
+                                            false,
+                                            false);
 
-                    if (rollbackIndex == 0) {
-                        break;
-                    }
-                }
-
-                errorMessage = QStringLiteral("Void đơn thất bại khi hoàn kho: %1").arg(stockError);
-                return false;
+            if (rollbackIndex == 0) {
+                break;
             }
+        }
+    };
 
-            restoredAllocations.push_back(allocation);
+    for (const StockAllocation &allocation : allocations) {
+        QString stockError;
+        if (!m_productService.stockIn(allocation.lotId,
+                                      allocation.qty,
+                                      stockError,
+                                      voidReason,
+                                      QDate::currentDate().toString(Qt::ISODate),
+                                      true,
+                                      false)) {
+            undoRestoredStock();
+            errorMessage = QStringLiteral("Void đơn thất bại khi hoàn kho: %1").arg(stockError);
+            return false;
         }
 
+        restoredAllocations.push_back(allocation);
+    }
+
+    const domain::Order previousOrder = order;
+    const QVector<StockAllocation> previousAllocations = m_stockAllocations;
+
+    if (!allocations.isEmpty()) {
         m_stockAllocations.erase(
             std::remove_if(m_stockAllocations.begin(), m_stockAllocations.end(), [&order](const StockAllocation &allocation) {
                 return allocation.orderId == order.id;
@@ -439,6 +563,34 @@ bool OrderService::voidOrder(const QString &orderId, QString &errorMessage)
     }
 
     order.status = domain::OrderStatus::Voided;
+
+    if (!m_databaseService.beginTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        undoRestoredStock();
+        return false;
+    }
+
+    QString persistenceError;
+    if (!m_productService.saveToDatabase(persistenceError) || !saveToDatabase(persistenceError)) {
+        m_databaseService.rollbackTransaction();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        undoRestoredStock();
+        errorMessage = persistenceError;
+        return false;
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        m_databaseService.rollbackTransaction();
+        order = previousOrder;
+        m_stockAllocations = previousAllocations;
+        undoRestoredStock();
+        return false;
+    }
+
     errorMessage.clear();
     return true;
 }
@@ -548,15 +700,8 @@ bool OrderService::planStockAllocations(const QString &orderId,
     return true;
 }
 
-core::Money OrderService::calculateLineSubtotal(const domain::OrderItem &item)
+void OrderService::recomputeOrderTotals(domain::Order &order, const QVector<domain::OrderItem> &items)
 {
-    return static_cast<core::Money>(item.qty) * item.unitPriceVnd;
-}
-
-void OrderService::recomputeOrderTotals(domain::Order &order)
-{
-    const QVector<domain::OrderItem> items = m_orderItemsByOrder.value(order.id);
-
     core::Money subtotal = 0;
     core::Money discount = 0;
 
@@ -569,6 +714,240 @@ void OrderService::recomputeOrderTotals(domain::Order &order)
     order.discountVnd = discount;
     order.totalVnd = std::max<core::Money>(0, subtotal - discount);
     order.balanceVnd = std::max<core::Money>(0, order.totalVnd - order.paidVnd);
+}
+
+core::Money OrderService::calculateLineSubtotal(const domain::OrderItem &item)
+{
+    return static_cast<core::Money>(item.qty) * item.unitPriceVnd;
+}
+
+QString OrderService::statusToString(domain::OrderStatus status)
+{
+    switch (status) {
+    case domain::OrderStatus::Draft:
+        return QStringLiteral("Draft");
+    case domain::OrderStatus::Confirmed:
+        return QStringLiteral("Confirmed");
+    case domain::OrderStatus::PartiallyPaid:
+        return QStringLiteral("PartiallyPaid");
+    case domain::OrderStatus::Paid:
+        return QStringLiteral("Paid");
+    case domain::OrderStatus::Voided:
+        return QStringLiteral("Voided");
+    }
+
+    return QStringLiteral("Draft");
+}
+
+domain::OrderStatus OrderService::statusFromString(const QString &value)
+{
+    if (value == QLatin1String("Confirmed")) {
+        return domain::OrderStatus::Confirmed;
+    }
+    if (value == QLatin1String("PartiallyPaid")) {
+        return domain::OrderStatus::PartiallyPaid;
+    }
+    if (value == QLatin1String("Paid")) {
+        return domain::OrderStatus::Paid;
+    }
+    if (value == QLatin1String("Voided")) {
+        return domain::OrderStatus::Voided;
+    }
+
+    return domain::OrderStatus::Draft;
+}
+
+bool OrderService::loadFromDatabase()
+{
+    m_orders.clear();
+    m_orderItemsByOrder.clear();
+    m_stockAllocations.clear();
+    m_nextOrderSerial = 1;
+
+    if (!m_databaseService.isReady()) {
+        return false;
+    }
+
+    QSqlQuery orderQuery(m_databaseService.database());
+    if (!orderQuery.exec(QStringLiteral(
+            "SELECT id, order_no, customer_id, order_date, status, subtotal_vnd, discount_vnd, total_vnd, paid_vnd, balance_vnd "
+            "FROM orders ORDER BY order_date ASC, order_no ASC;"))) {
+        return false;
+    }
+
+    while (orderQuery.next()) {
+        domain::Order order;
+        order.id = orderQuery.value(0).toString();
+        order.orderNo = orderQuery.value(1).toString();
+        order.customerId = orderQuery.value(2).toString();
+        order.orderDate = orderQuery.value(3).toString();
+        order.status = statusFromString(orderQuery.value(4).toString());
+        order.subtotalVnd = orderQuery.value(5).toLongLong();
+        order.discountVnd = orderQuery.value(6).toLongLong();
+        order.totalVnd = orderQuery.value(7).toLongLong();
+        order.paidVnd = orderQuery.value(8).toLongLong();
+        order.balanceVnd = orderQuery.value(9).toLongLong();
+        m_orders.push_back(order);
+        m_orderItemsByOrder.insert(order.id, {});
+    }
+
+    QSqlQuery itemQuery(m_databaseService.database());
+    if (!itemQuery.exec(QStringLiteral(
+            "SELECT id, order_id, product_id, qty, unit_price_vnd, discount_vnd, line_total_vnd "
+            "FROM order_items ORDER BY order_id ASC, id ASC;"))) {
+        return false;
+    }
+
+    while (itemQuery.next()) {
+        domain::OrderItem item;
+        item.id = itemQuery.value(0).toString();
+        const QString orderId = itemQuery.value(1).toString();
+        item.productId = itemQuery.value(2).toString();
+        item.qty = itemQuery.value(3).toInt();
+        item.unitPriceVnd = itemQuery.value(4).toLongLong();
+        item.discountVnd = itemQuery.value(5).toLongLong();
+        item.lineTotalVnd = itemQuery.value(6).toLongLong();
+        m_orderItemsByOrder[orderId].push_back(item);
+    }
+
+    QSqlQuery allocationQuery(m_databaseService.database());
+    if (!allocationQuery.exec(QStringLiteral(
+            "SELECT order_id, order_item_id, lot_id, qty "
+            "FROM stock_allocations ORDER BY order_id ASC, order_item_id ASC, lot_id ASC;"))) {
+        return false;
+    }
+
+    while (allocationQuery.next()) {
+        m_stockAllocations.push_back(StockAllocation{
+            allocationQuery.value(0).toString(),
+            allocationQuery.value(1).toString(),
+            allocationQuery.value(2).toString(),
+            allocationQuery.value(3).toInt(),
+        });
+    }
+
+    recomputeNextOrderSerial();
+    return true;
+}
+
+bool OrderService::persistState(const QVector<domain::Order> &orders,
+                                const QHash<QString, QVector<domain::OrderItem>> &orderItemsByOrder,
+                                const QVector<StockAllocation> &stockAllocations,
+                                QString &errorMessage) const
+{
+    if (!m_databaseService.isReady()) {
+        errorMessage.clear();
+        return true;
+    }
+
+    if (!m_databaseService.beginTransaction()) {
+        errorMessage = m_databaseService.lastError();
+        return false;
+    }
+
+    auto rollbackWith = [this, &errorMessage](const QString &message) {
+        errorMessage = message;
+        m_databaseService.rollbackTransaction();
+        return false;
+    };
+
+    QSqlQuery clearAllocationsQuery(m_databaseService.database());
+    if (!clearAllocationsQuery.exec(QStringLiteral("DELETE FROM stock_allocations;"))) {
+        return rollbackWith(clearAllocationsQuery.lastError().text());
+    }
+
+    QSqlQuery clearItemsQuery(m_databaseService.database());
+    if (!clearItemsQuery.exec(QStringLiteral("DELETE FROM order_items;"))) {
+        return rollbackWith(clearItemsQuery.lastError().text());
+    }
+
+    QSqlQuery clearOrdersQuery(m_databaseService.database());
+    if (!clearOrdersQuery.exec(QStringLiteral("DELETE FROM orders;"))) {
+        return rollbackWith(clearOrdersQuery.lastError().text());
+    }
+
+    QSqlQuery insertOrderQuery(m_databaseService.database());
+    if (!insertOrderQuery.prepare(QStringLiteral(
+            "INSERT INTO orders("
+            "id, order_no, customer_id, order_date, status, subtotal_vnd, discount_vnd, total_vnd, paid_vnd, balance_vnd"
+            ") VALUES("
+            ":id, :order_no, :customer_id, :order_date, :status, :subtotal_vnd, :discount_vnd, :total_vnd, :paid_vnd, :balance_vnd"
+            ");"))) {
+        return rollbackWith(insertOrderQuery.lastError().text());
+    }
+
+    for (const domain::Order &order : orders) {
+        insertOrderQuery.bindValue(QStringLiteral(":id"), order.id);
+        insertOrderQuery.bindValue(QStringLiteral(":order_no"), order.orderNo);
+        insertOrderQuery.bindValue(QStringLiteral(":customer_id"), order.customerId);
+        insertOrderQuery.bindValue(QStringLiteral(":order_date"), order.orderDate);
+        insertOrderQuery.bindValue(QStringLiteral(":status"), statusToString(order.status));
+        insertOrderQuery.bindValue(QStringLiteral(":subtotal_vnd"), order.subtotalVnd);
+        insertOrderQuery.bindValue(QStringLiteral(":discount_vnd"), order.discountVnd);
+        insertOrderQuery.bindValue(QStringLiteral(":total_vnd"), order.totalVnd);
+        insertOrderQuery.bindValue(QStringLiteral(":paid_vnd"), order.paidVnd);
+        insertOrderQuery.bindValue(QStringLiteral(":balance_vnd"), order.balanceVnd);
+        if (!insertOrderQuery.exec()) {
+            return rollbackWith(insertOrderQuery.lastError().text());
+        }
+    }
+
+    QSqlQuery insertItemQuery(m_databaseService.database());
+    if (!insertItemQuery.prepare(QStringLiteral(
+            "INSERT INTO order_items("
+            "id, order_id, product_id, qty, unit_price_vnd, discount_vnd, line_total_vnd"
+            ") VALUES("
+            ":id, :order_id, :product_id, :qty, :unit_price_vnd, :discount_vnd, :line_total_vnd"
+            ");"))) {
+        return rollbackWith(insertItemQuery.lastError().text());
+    }
+
+    for (auto it = orderItemsByOrder.cbegin(); it != orderItemsByOrder.cend(); ++it) {
+        for (const domain::OrderItem &item : it.value()) {
+            insertItemQuery.bindValue(QStringLiteral(":id"), item.id);
+            insertItemQuery.bindValue(QStringLiteral(":order_id"), it.key());
+            insertItemQuery.bindValue(QStringLiteral(":product_id"), item.productId);
+            insertItemQuery.bindValue(QStringLiteral(":qty"), item.qty);
+            insertItemQuery.bindValue(QStringLiteral(":unit_price_vnd"), item.unitPriceVnd);
+            insertItemQuery.bindValue(QStringLiteral(":discount_vnd"), item.discountVnd);
+            insertItemQuery.bindValue(QStringLiteral(":line_total_vnd"), item.lineTotalVnd);
+            if (!insertItemQuery.exec()) {
+                return rollbackWith(insertItemQuery.lastError().text());
+            }
+        }
+    }
+
+    QSqlQuery insertAllocationQuery(m_databaseService.database());
+    if (!insertAllocationQuery.prepare(QStringLiteral(
+            "INSERT INTO stock_allocations("
+            "order_id, order_item_id, lot_id, qty"
+            ") VALUES("
+            ":order_id, :order_item_id, :lot_id, :qty"
+            ");"))) {
+        return rollbackWith(insertAllocationQuery.lastError().text());
+    }
+
+    for (const StockAllocation &allocation : stockAllocations) {
+        insertAllocationQuery.bindValue(QStringLiteral(":order_id"), allocation.orderId);
+        insertAllocationQuery.bindValue(QStringLiteral(":order_item_id"), allocation.orderItemId);
+        insertAllocationQuery.bindValue(QStringLiteral(":lot_id"), allocation.lotId);
+        insertAllocationQuery.bindValue(QStringLiteral(":qty"), allocation.qty);
+        if (!insertAllocationQuery.exec()) {
+            return rollbackWith(insertAllocationQuery.lastError().text());
+        }
+    }
+
+    if (!m_databaseService.commitTransaction()) {
+        return rollbackWith(m_databaseService.lastError());
+    }
+
+    errorMessage.clear();
+    return true;
+}
+
+void OrderService::recomputeNextOrderSerial()
+{
+    m_nextOrderSerial = nextOrderSerial(m_orders);
 }
 
 QString OrderService::nextOrderNo()

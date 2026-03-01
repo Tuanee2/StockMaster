@@ -1,12 +1,25 @@
 #include <cassert>
 
-#include "stockmaster/application/product_service.h"
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 
-int main()
+#include "stockmaster/application/product_service.h"
+#include "stockmaster/infra/db/database_service.h"
+
+int main(int argc, char *argv[])
 {
     using namespace stockmaster;
 
-    application::ProductService productService;
+    QCoreApplication app(argc, argv);
+
+    const QString dbPath = QDir::temp().filePath(QStringLiteral("stockmaster_inventory_service_smoke.sqlite"));
+    QFile::remove(dbPath);
+
+    infra::db::DatabaseService databaseService(dbPath);
+    assert(databaseService.initialize());
+
+    application::ProductService productService(databaseService);
     const QVector<domain::Product> products = productService.findProducts();
     assert(!products.isEmpty());
 

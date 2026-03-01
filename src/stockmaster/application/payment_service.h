@@ -5,6 +5,10 @@
 
 #include "stockmaster/domain/entities.h"
 
+namespace stockmaster::infra::db {
+class DatabaseService;
+}
+
 namespace stockmaster::application {
 
 class CustomerService;
@@ -21,7 +25,8 @@ struct CustomerReceivableSummary {
 
 class PaymentService {
 public:
-    PaymentService(OrderService &orderService,
+    PaymentService(stockmaster::infra::db::DatabaseService &databaseService,
+                   OrderService &orderService,
                    const CustomerService &customerService);
 
     [[nodiscard]] QVector<CustomerReceivableSummary> findCustomerReceivables(const QString &keyword = {}) const;
@@ -40,7 +45,11 @@ public:
 
 private:
     [[nodiscard]] QString nextPaymentNo();
+    bool loadFromDatabase();
+    bool persistPayments(const QVector<domain::Payment> &payments, QString &errorMessage) const;
+    void recomputeNextPaymentSerial();
 
+    stockmaster::infra::db::DatabaseService &m_databaseService;
     OrderService &m_orderService;
     const CustomerService &m_customerService;
     QVector<domain::Payment> m_payments;

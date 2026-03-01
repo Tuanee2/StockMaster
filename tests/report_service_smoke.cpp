@@ -2,6 +2,7 @@
 
 #include <QDate>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 
@@ -18,13 +19,16 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
 
-    infra::db::DatabaseService databaseService;
+    const QString dbPath = QDir::temp().filePath(QStringLiteral("stockmaster_report_service_smoke.sqlite"));
+    QFile::remove(dbPath);
+
+    infra::db::DatabaseService databaseService(dbPath);
     assert(databaseService.initialize());
 
-    application::CustomerService customerService;
-    application::ProductService productService;
+    application::CustomerService customerService(databaseService);
+    application::ProductService productService(databaseService);
     application::OrderService orderService(databaseService, customerService, productService);
-    application::PaymentService paymentService(orderService, customerService);
+    application::PaymentService paymentService(databaseService, orderService, customerService);
     application::ReportService reportService(orderService,
                                              paymentService,
                                              customerService,

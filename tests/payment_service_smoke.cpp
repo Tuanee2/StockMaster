@@ -1,22 +1,31 @@
 #include <cassert>
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+
 #include "stockmaster/application/customer_service.h"
 #include "stockmaster/application/order_service.h"
 #include "stockmaster/application/payment_service.h"
 #include "stockmaster/application/product_service.h"
 #include "stockmaster/infra/db/database_service.h"
 
-int main()
+int main(int argc, char *argv[])
 {
     using namespace stockmaster;
 
-    infra::db::DatabaseService databaseService;
+    QCoreApplication app(argc, argv);
+
+    const QString dbPath = QDir::temp().filePath(QStringLiteral("stockmaster_payment_service_smoke.sqlite"));
+    QFile::remove(dbPath);
+
+    infra::db::DatabaseService databaseService(dbPath);
     assert(databaseService.initialize());
 
-    application::CustomerService customerService;
-    application::ProductService productService;
+    application::CustomerService customerService(databaseService);
+    application::ProductService productService(databaseService);
     application::OrderService orderService(databaseService, customerService, productService);
-    application::PaymentService paymentService(orderService, customerService);
+    application::PaymentService paymentService(databaseService, orderService, customerService);
 
     const QVector<domain::Customer> customers = customerService.findCustomers();
     const QVector<domain::Product> products = productService.findProducts();
