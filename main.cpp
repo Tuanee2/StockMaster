@@ -15,10 +15,13 @@
 #include "stockmaster/ui/viewmodels/payments_view_model.h"
 #include "stockmaster/ui/viewmodels/products_view_model.h"
 #include "stockmaster/ui/viewmodels/reports_view_model.h"
+#include "stockmaster/ui/viewmodels/settings_view_model.h"
 
 int main(int argc, char *argv[])
 {
     QGuiApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("StockMaster"));
+    app.setApplicationVersion(QStringLiteral(STOCKMASTER_APP_VERSION));
 
     stockmaster::infra::db::DatabaseService databaseService;
     databaseService.initialize();
@@ -42,6 +45,7 @@ int main(int argc, char *argv[])
     stockmaster::ui::viewmodels::PaymentsViewModel paymentsViewModel(paymentService);
     stockmaster::ui::viewmodels::ProductsViewModel productsViewModel(productService);
     stockmaster::ui::viewmodels::ReportsViewModel reportsViewModel(reportService);
+    stockmaster::ui::viewmodels::SettingsViewModel settingsViewModel(databaseService);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
@@ -51,6 +55,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("paymentsViewModel"), &paymentsViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("productsViewModel"), &productsViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("reportsViewModel"), &reportsViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("settingsViewModel"), &settingsViewModel);
 
     QObject::connect(
         &engine,

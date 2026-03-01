@@ -150,9 +150,24 @@ Rule UI đang phản ánh:
 - chỉnh tồn thành công sẽ refresh lại dashboard và màn Products
 - list snapshot highlight rõ mặt hàng tồn thấp
 
-## 8) Các màn hình placeholder hiện tại
+## 8) SettingsScreen
 
-- `SettingsScreen.qml`
+- Không còn là placeholder.
+- Mục tiêu hiện tại: chỉ làm updater tối giản cho desktop release.
+- Khi tab được mở:
+  - tự kiểm tra GitHub Release mới nhất
+  - nếu có bản mới đúng nền tảng thì tự tải gói cập nhật
+  - sau khi tải xong sẽ tự mở gói vừa tải
+- Trong phần nội dung chỉ giữ 1 nút thao tác:
+  - `Kiểm tra và tải bản cập nhật`
+- Hiển thị:
+  - version hiện tại
+  - version mới nhất trên release
+  - trạng thái kiểm tra/tải
+  - progress tải
+  - đường dẫn DB local
+  - đường dẫn file gói đã tải
+- Giải thích rõ việc update không làm mất dữ liệu vì SQLite ở `AppDataLocation`
 
 ## 9) ReportsScreen
 

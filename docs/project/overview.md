@@ -12,12 +12,14 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
 - quản lý đơn hàng draft/confirm/void
 - quản lý phiếu thu và công nợ theo khách
 - báo cáo tổng hợp và export file
+- kiểm tra GitHub Release mới và tải gói cập nhật từ màn Settings
 
 ## 2) Stack đang dùng
 
 - UI: Qt Quick / QML
 - Logic: C++17
 - Build: CMake + Qt6
+- Release: GitHub Actions build/package cho macOS + Windows
 - DB layer: SQLite local-first qua `DatabaseService` (đã mở file DB thật + bootstrap schema)
 
 ## 3) Trạng thái triển khai hiện tại
@@ -62,10 +64,16 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - chặn over-payment
   - cập nhật trạng thái `PartiallyPaid` / `Paid`
   - đối soát ledger theo khách
+- Settings updater:
+  - tự kiểm tra GitHub Release mới nhất khi vào tab
+  - tự tải gói cập nhật đúng nền tảng
+  - tự mở gói vừa tải sau khi tải xong
+  - giữ nguyên DB cũ vì SQLite nằm ngoài thư mục cài đặt
 
 Chưa triển khai đầy đủ:
 - debt ledger hiện vẫn là đối soát suy diễn từ order/payment, chưa lưu bảng riêng
 - report hiện vẫn là tổng hợp từ cache service, chưa có repository/report query tối ưu riêng
+- settings hiện mới là updater tối giản, chưa có backup/restore hoặc cấu hình sync
 - sync
 
 ## 4) Kiến trúc thực thi hiện tại

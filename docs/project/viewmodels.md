@@ -159,3 +159,30 @@ Mỗi lot trong `selectedProductLots` có thêm dữ liệu:
 - file export mặc định được tạo trong thư mục:
   - `Documents/StockMasterExports`
   - fallback sang thư mục chạy app nếu không lấy được `Documents`
+
+## 8) SettingsViewModel
+
+- Kiểu: `QObject`
+- Mục tiêu: làm updater tối giản cho bản desktop hiện tại
+
+### Data expose cho UI
+- `currentVersion`
+- `latestVersion`
+- `statusText`
+- `actionLabel`
+- `databasePath`
+- `downloadedFilePath`
+- `checking`, `downloading`, `busy`
+- `updateAvailable`
+- `downloadProgress`
+
+### Action
+- `checkForUpdates()`
+
+### Rule chính
+- Gọi GitHub Releases API để đọc bản `latest`
+- So sánh `tag_name` với `QCoreApplication::applicationVersion()`
+- Nếu có bản mới và có asset đúng nền tảng:
+  - tự tải gói cập nhật về `Downloads/StockMasterUpdates`
+  - sau khi tải xong sẽ thử mở gói cập nhật ngay
+- Không đụng file SQLite hiện có vì DB local nằm ở `AppDataLocation`

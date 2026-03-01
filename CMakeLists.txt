@@ -4,10 +4,11 @@ project(StockMaster VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(STOCKMASTER_RUNTIME_VERSION "${PROJECT_VERSION}" CACHE STRING "Runtime application version for release/update checks")
 
 include(CTest)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Sql)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql Network)
 
 qt_standard_project_setup(REQUIRES 6.5)
 qt_policy(SET QTP0004 NEW)
@@ -27,6 +28,7 @@ qt_add_executable(appStockMaster
     src/stockmaster/ui/viewmodels/payments_view_model.cpp
     src/stockmaster/ui/viewmodels/products_view_model.cpp
     src/stockmaster/ui/viewmodels/reports_view_model.cpp
+    src/stockmaster/ui/viewmodels/settings_view_model.cpp
 )
 
 target_include_directories(appStockMaster
@@ -66,6 +68,12 @@ qt_add_qml_module(appStockMaster
         src/stockmaster/ui/viewmodels/payments_view_model.h
         src/stockmaster/ui/viewmodels/products_view_model.h
         src/stockmaster/ui/viewmodels/reports_view_model.h
+        src/stockmaster/ui/viewmodels/settings_view_model.h
+)
+
+target_compile_definitions(appStockMaster
+    PRIVATE
+        STOCKMASTER_APP_VERSION="${STOCKMASTER_RUNTIME_VERSION}"
 )
 
 set_target_properties(appStockMaster PROPERTIES
@@ -80,6 +88,7 @@ target_link_libraries(appStockMaster
     PRIVATE
         Qt6::Quick
         Qt6::Sql
+        Qt6::Network
 )
 
 include(GNUInstallDirs)

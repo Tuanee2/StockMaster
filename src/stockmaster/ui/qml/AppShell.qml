@@ -302,6 +302,7 @@ Item {
                         Item { Layout.fillWidth: true }
 
                         Button {
+                            visible: appViewModel.currentSection !== "Settings"
                             text: "Làm mới"
                             onClicked: {
                                 appViewModel.refreshOverview()

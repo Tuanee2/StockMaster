@@ -4,6 +4,7 @@
 
 - `main.cpp`: khởi tạo app + service + viewmodels + inject context vào QML.
 - `CMakeLists.txt`: định nghĩa executable, sources, QML module.
+- `.github/workflows/release.yml`: build `Release`, đóng gói macOS/Windows, publish GitHub Release khi push tag `v*`.
 
 ## 2) Cấu trúc thư mục chính
 
@@ -40,7 +41,7 @@ src/stockmaster/
   - `DatabaseService`: mở kết nối `QSQLITE`, bootstrap schema local, quản lý transaction lồng nhau mức đơn giản.
 
 - `ui/viewmodels/`
-  - map nghiệp vụ sang API dễ bind cho QML (`AppViewModel`, `CustomersViewModel`, `ProductsViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ReportsViewModel`).
+  - map nghiệp vụ sang API dễ bind cho QML (`AppViewModel`, `CustomersViewModel`, `ProductsViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ReportsViewModel`, `SettingsViewModel`).
 
 - `ui/qml/`
   - shell/navigation + screen + reusable component.
@@ -57,8 +58,8 @@ src/stockmaster/
 4. `OrderService` (load đơn, dòng đơn, allocation từ SQLite)
 5. `PaymentService` (load phiếu thu từ SQLite)
 6. `ReportService`
-7. `AppViewModel`, `CustomersViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ProductsViewModel`, `ReportsViewModel`
-8. expose vào QML context (`appViewModel`, `customersViewModel`, `inventoryViewModel`, `ordersViewModel`, `paymentsViewModel`, `productsViewModel`, `reportsViewModel`)
+7. `AppViewModel`, `CustomersViewModel`, `InventoryViewModel`, `OrdersViewModel`, `PaymentsViewModel`, `ProductsViewModel`, `ReportsViewModel`, `SettingsViewModel`
+8. expose vào QML context (`appViewModel`, `customersViewModel`, `inventoryViewModel`, `ordersViewModel`, `paymentsViewModel`, `productsViewModel`, `reportsViewModel`, `settingsViewModel`)
 
 `AppViewModel` hiện tổng hợp dữ liệu dashboard từ:
 - `OrderService`

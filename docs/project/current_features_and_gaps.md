@@ -44,6 +44,14 @@
   - customer / product / lot / inventory movement
   - order / order item / stock allocation
   - payment
+- Settings updater:
+  - khi vào tab sẽ tự kiểm tra GitHub Release mới nhất
+  - có 1 nút để kiểm tra lại và tải gói cập nhật
+  - tự tải gói cập nhật theo nền tảng và tự mở gói sau khi tải xong
+  - không đụng DB local
+- GitHub Actions release packaging:
+  - macOS `.dmg`
+  - Windows `.zip` đã chạy `windeployqt`
 - Smoke test:
   - `report_service_smoke`
   - `sqlite_persistence_smoke`
@@ -51,17 +59,17 @@
   - `inventory_service_smoke`
   - `payment_service_smoke`
 
-## 2) Feature mới thêm gần nhất (SQLite persistence)
+## 2) Feature mới thêm gần nhất (Release updater + packaging)
 
-- Thay `DatabaseService` placeholder bằng kết nối `QSQLITE` thật
-- Thêm bootstrap schema local cho:
-  - customers
-  - products / product_lots / inventory_movements
-  - orders / order_items / stock_allocations
-  - payments
-- `CustomerService`, `ProductService`, `OrderService`, `PaymentService` giờ load dữ liệu từ SQLite khi khởi tạo
-- Các thao tác CRUD/nghiệp vụ chính sẽ ghi snapshot dữ liệu xuống file SQLite local
-- Thêm `sqlite_persistence_smoke` để kiểm tra mở lại service vẫn đọc được dữ liệu đã ghi
+- Thêm `SettingsViewModel` để:
+  - kiểm tra `releases/latest` trên GitHub
+  - so sánh version hiện tại với `tag_name`
+  - tự tải gói update về thư mục tải xuống
+- `SettingsScreen` không còn là placeholder; hiện chỉ giữ 1 nút cập nhật và phần trạng thái tải
+- Thêm workflow `.github/workflows/release.yml`:
+  - build `Release` trên macOS và Windows
+  - dùng `macdeployqt` / `windeployqt`
+  - upload asset vào GitHub Release khi push tag `v*`
 
 ## 3) Giới hạn kỹ thuật hiện tại
 
@@ -71,6 +79,7 @@
 - Report export PDF hiện là bản PDF text-based đơn giản, chưa có layout in ấn nâng cao.
 - Chưa có DB worker thread riêng; hiện query/ghi vẫn chạy đồng bộ trên luồng gọi.
 - Chưa có migration versioned nhiều bước, mới ở mức bootstrap schema version 1.
+- Updater đã có bước tự mở gói sau khi tải, nhưng vẫn phụ thuộc shell mặc định của hệ điều hành và chưa có updater helper riêng.
 
 ## 4) Đề xuất thứ tự triển khai tiếp theo
 
@@ -82,4 +91,4 @@
    - stock in/out + inventory adjustment edge cases
    - order query by date/range
    - apply payment / over-payment
-5. Hoàn thiện các screen Reports/Settings.
+5. Nếu cần trải nghiệm update liền mạch hơn, thêm bước mở gói cài đặt hoặc updater helper riêng sau khi tải xong.

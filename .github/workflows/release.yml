@@ -1,0 +1,117 @@
+name: Build And Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: "6.9.3"
+  BUILD_DIR: build-release
+  RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}
+
+jobs:
+  package:
+    name: Package ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            qt_host: mac
+            qt_target: desktop
+            qt_arch: clang_64
+            artifact_name: package-macos
+          - os: windows-latest
+            label: Windows
+            qt_host: windows
+            qt_target: desktop
+            qt_arch: win64_msvc2022_64
+            artifact_name: package-windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: ${{ matrix.qt_host }}
+          target: ${{ matrix.qt_target }}
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B ${{ env.BUILD_DIR }} -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTOCKMASTER_RUNTIME_VERSION=${{ env.RELEASE_VERSION }}
+
+      - name: Build
+        run: cmake --build ${{ env.BUILD_DIR }} --target appStockMaster
+
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p dist
+          macdeployqt "${BUILD_DIR}/appStockMaster.app" -qmldir=src/stockmaster/ui/qml -dmg
+          mv "${BUILD_DIR}/appStockMaster.dmg" "dist/StockMaster-macos.dmg"
+
+      - name: Package Windows ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          New-Item -ItemType Directory -Force -Path dist\StockMaster | Out-Null
+          Copy-Item "${env:BUILD_DIR}\appStockMaster.exe" "dist\StockMaster\appStockMaster.exe"
+          windeployqt --release --qmldir src/stockmaster/ui/qml "dist\StockMaster\appStockMaster.exe"
+          Compress-Archive -Path "dist\StockMaster" -DestinationPath "dist\StockMaster-windows-x64.zip" -Force
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/StockMaster-macos.dmg
+          if-no-files-found: error
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/StockMaster-windows-x64.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: release-artifacts
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-artifacts/package-macos/*
+            release-artifacts/package-windows/*
