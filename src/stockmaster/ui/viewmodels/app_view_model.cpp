@@ -176,13 +176,12 @@ void AppViewModel::refreshOverview()
         receivableByCustomer.insert(summary.customerId, summary.receivableVnd);
     }
 
-    constexpr int kMonthCount = 6;
-    const QDate currentMonth = QDate::currentDate();
-    const QDate firstVisibleMonth(currentMonth.year(), currentMonth.month(), 1);
-    const QDate baseMonth = firstVisibleMonth.addMonths(-(kMonthCount - 1));
+    constexpr int kDayCount = 7;
+    const QDate currentDate = QDate::currentDate();
+    const QDate baseDate = currentDate.addDays(-(kDayCount - 1));
 
-    QVector<core::Money> salesByMonth(kMonthCount, 0);
-    QVector<core::Money> collectedByMonth(kMonthCount, 0);
+    QVector<core::Money> salesByDay(kDayCount, 0);
+    QVector<core::Money> collectedByDay(kDayCount, 0);
 
     struct CustomerSalesRow {
         QString customerId;
@@ -198,15 +197,13 @@ void AppViewModel::refreshOverview()
     };
     QHash<QString, ProductSalesRow> productSalesById;
 
-    auto monthIndexForDate = [baseMonth, kMonthCount](const QDate &date) {
+    auto dayIndexForDate = [baseDate, kDayCount](const QDate &date) {
         if (!date.isValid()) {
             return -1;
         }
 
-        const QDate monthStart(date.year(), date.month(), 1);
-        const int delta = (monthStart.year() - baseMonth.year()) * 12
-                          + (monthStart.month() - baseMonth.month());
-        if (delta < 0 || delta >= kMonthCount) {
+        const int delta = baseDate.daysTo(date);
+        if (delta < 0 || delta >= kDayCount) {
             return -1;
         }
 
@@ -219,9 +216,9 @@ void AppViewModel::refreshOverview()
         }
 
         const QDate orderDate = QDate::fromString(order.orderDate, Qt::ISODate);
-        const int monthIndex = monthIndexForDate(orderDate);
-        if (monthIndex >= 0) {
-            salesByMonth[monthIndex] += order.totalVnd;
+        const int dayIndex = dayIndexForDate(orderDate);
+        if (dayIndex >= 0) {
+            salesByDay[dayIndex] += order.totalVnd;
         }
 
         CustomerSalesRow customerRow = customerSalesById.value(order.customerId);
@@ -242,29 +239,29 @@ void AppViewModel::refreshOverview()
 
     for (const domain::Payment &payment : payments) {
         const QDate paidDate = QDate::fromString(payment.paidAt, Qt::ISODate);
-        const int monthIndex = monthIndexForDate(paidDate);
-        if (monthIndex >= 0) {
-            collectedByMonth[monthIndex] += payment.amountVnd;
+        const int dayIndex = dayIndexForDate(paidDate);
+        if (dayIndex >= 0) {
+            collectedByDay[dayIndex] += payment.amountVnd;
         }
     }
 
     QVariantList monthlyTrends;
-    monthlyTrends.reserve(kMonthCount);
+    monthlyTrends.reserve(kDayCount);
     m_monthlyTrendPeakVnd = 0;
     m_hasMonthlyActivity = false;
 
-    for (int index = 0; index < kMonthCount; ++index) {
-        const QDate monthDate = baseMonth.addMonths(index);
-        const core::Money salesVnd = salesByMonth[index];
-        const core::Money collectedVnd = collectedByMonth[index];
+    for (int index = 0; index < kDayCount; ++index) {
+        const QDate trendDate = baseDate.addDays(index);
+        const core::Money salesVnd = salesByDay[index];
+        const core::Money collectedVnd = collectedByDay[index];
 
         m_monthlyTrendPeakVnd = std::max<qint64>(m_monthlyTrendPeakVnd,
                                                  std::max<core::Money>(salesVnd, collectedVnd));
         m_hasMonthlyActivity = m_hasMonthlyActivity || salesVnd > 0 || collectedVnd > 0;
 
         monthlyTrends.push_back(QVariantMap{
-            {QStringLiteral("monthKey"), monthDate.toString(QStringLiteral("yyyy-MM"))},
-            {QStringLiteral("monthLabel"), monthDate.toString(QStringLiteral("MM/yy"))},
+            {QStringLiteral("monthKey"), trendDate.toString(Qt::ISODate)},
+            {QStringLiteral("monthLabel"), trendDate.toString(QStringLiteral("dd/MM"))},
             {QStringLiteral("salesVnd"), salesVnd},
             {QStringLiteral("salesText"), formatMoney(salesVnd)},
             {QStringLiteral("collectedVnd"), collectedVnd},

@@ -47,6 +47,7 @@ Validation input tiền:
   - `stockOutLot`
 - Expose `selectedProductLots` dạng `QVariantList` để QML render list lô.
 - Expose thêm `selectedProductExpiringSoonLotCount` để hiện cảnh báo theo sản phẩm đang chọn.
+- Khi tạo mới, UI có thể để trống SKU; `ProductService` sẽ tự sinh mã.
 
 Mỗi lot trong `selectedProductLots` có thêm dữ liệu:
 - `expiryDate`
@@ -113,6 +114,8 @@ Mỗi lot trong `selectedProductLots` có thêm dữ liệu:
 - `removeDraftItem`
 - `confirmSelectedOrder`
 - `voidSelectedOrder`
+- `lotsForProduct`
+- `previewAllocations`
 
 ### Query danh sách đơn
 - Property query:
@@ -132,7 +135,12 @@ Mỗi lot trong `selectedProductLots` có thêm dữ liệu:
 - Format ngày bắt buộc `YYYY-MM-DD`, validate và báo lỗi qua `lastError`.
 
 ### Trạng thái chọn đơn
-- Expose `canEditDraft`, `canConfirm`, `canVoid` để bật/tắt action trên UI.
+- Expose `canEditDraft`, `canConfirm`, `canVoid`, `canOpenPayment` để bật/tắt action trên UI.
+
+### Rule item draft
+- `addOrUpdateDraftItem` nhận thêm `preferredLotId`.
+- UI có thể xem trước cách hệ thống phân bổ qty từ lô đã chọn sang các lô còn lại.
+- `selectedOrderItems` có thêm `lotSummary` và `primaryLotId` để hiển thị/đổ ngược form.
 
 ## 7) ReportsViewModel
 
@@ -169,20 +177,24 @@ Mỗi lot trong `selectedProductLots` có thêm dữ liệu:
 - `currentVersion`
 - `latestVersion`
 - `statusText`
-- `actionLabel`
+- `updateActionLabel`
 - `databasePath`
 - `downloadedFilePath`
 - `checking`, `downloading`, `busy`
 - `updateAvailable`
+- `canUpdate`
 - `downloadProgress`
 
 ### Action
 - `checkForUpdates()`
+- `downloadUpdate()`
 
 ### Rule chính
 - Gọi GitHub Releases API để đọc bản `latest`
 - So sánh `tag_name` với `QCoreApplication::applicationVersion()`
+- `currentVersion` và `latestVersion` được format về semantic version `x.y.z` trước khi hiển thị trên UI
 - Nếu có bản mới và có asset đúng nền tảng:
-  - tự tải gói cập nhật về `Downloads/StockMasterUpdates`
-  - sau khi tải xong sẽ thử mở gói cập nhật ngay
+  - bật trạng thái sẵn sàng cập nhật cho UI
+  - chỉ khi người dùng bấm `Cập nhật` mới tải gói về `Downloads/StockMasterUpdates`
+  - sau khi tải xong sẽ thử mở gói cập nhật
 - Không đụng file SQLite hiện có vì DB local nằm ở `AppDataLocation`

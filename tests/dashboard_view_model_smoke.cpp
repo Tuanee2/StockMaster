@@ -20,7 +20,9 @@ int main(int argc, char *argv[])
 
     QCoreApplication app(argc, argv);
 
-    const QString dbPath = QDir::temp().filePath(QStringLiteral("stockmaster_dashboard_view_model_smoke.sqlite"));
+    const QString dbPath = QDir::temp().filePath(
+        QStringLiteral("stockmaster_dashboard_view_model_smoke_%1.sqlite")
+            .arg(QCoreApplication::applicationPid()));
     QFile::remove(dbPath);
 
     infra::db::DatabaseService databaseService(dbPath);
@@ -43,11 +45,11 @@ int main(int argc, char *argv[])
 
     QString errorMessage;
     QString firstOrderId;
-    const QDate currentMonth = QDate::currentDate();
-    const QDate lastMonth = currentMonth.addMonths(-1);
+    const QDate currentDate = QDate::currentDate();
+    const QDate previousDate = currentDate.addDays(-1);
 
     assert(orderService.createDraftOrder(customers.at(0).id,
-                                         lastMonth.toString(Qt::ISODate),
+                                         previousDate.toString(Qt::ISODate),
                                          firstOrderId,
                                          errorMessage));
     assert(orderService.upsertDraftItem(firstOrderId,
@@ -61,12 +63,12 @@ int main(int argc, char *argv[])
                                         firstOrderId,
                                         products.at(0).defaultWholesalePriceVnd,
                                         QStringLiteral("Tien mat"),
-                                        currentMonth.toString(Qt::ISODate),
+                                        currentDate.toString(Qt::ISODate),
                                         errorMessage));
 
     QString secondOrderId;
     assert(orderService.createDraftOrder(customers.at(1).id,
-                                         currentMonth.toString(Qt::ISODate),
+                                         currentDate.toString(Qt::ISODate),
                                          secondOrderId,
                                          errorMessage));
     assert(orderService.upsertDraftItem(secondOrderId,
@@ -80,27 +82,27 @@ int main(int argc, char *argv[])
     appViewModel.refreshOverview();
 
     const QVariantList monthlyTrends = appViewModel.monthlyTrends();
-    assert(monthlyTrends.size() == 6);
+    assert(monthlyTrends.size() == 7);
 
-    bool foundCurrentMonth = false;
-    bool foundLastMonth = false;
+    bool foundCurrentDate = false;
+    bool foundPreviousDate = false;
     for (const QVariant &item : monthlyTrends) {
         const QVariantMap row = item.toMap();
         const QString monthKey = row.value(QStringLiteral("monthKey")).toString();
-        if (monthKey == currentMonth.toString(QStringLiteral("yyyy-MM"))) {
-            foundCurrentMonth = true;
+        if (monthKey == currentDate.toString(Qt::ISODate)) {
+            foundCurrentDate = true;
             assert(row.value(QStringLiteral("salesVnd")).toLongLong() > 0);
             assert(row.value(QStringLiteral("collectedVnd")).toLongLong() > 0);
         }
 
-        if (monthKey == lastMonth.toString(QStringLiteral("yyyy-MM"))) {
-            foundLastMonth = true;
+        if (monthKey == previousDate.toString(Qt::ISODate)) {
+            foundPreviousDate = true;
             assert(row.value(QStringLiteral("salesVnd")).toLongLong() > 0);
         }
     }
 
-    assert(foundCurrentMonth);
-    assert(foundLastMonth);
+    assert(foundCurrentDate);
+    assert(foundPreviousDate);
     assert(appViewModel.monthlyTrendPeakVnd() > 0);
     assert(appViewModel.hasMonthlyActivity());
 

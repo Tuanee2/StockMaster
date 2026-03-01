@@ -23,13 +23,14 @@ class SettingsViewModel : public QObject {
     Q_PROPERTY(QString currentVersion READ currentVersion NOTIFY stateChanged)
     Q_PROPERTY(QString latestVersion READ latestVersion NOTIFY stateChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
-    Q_PROPERTY(QString actionLabel READ actionLabel NOTIFY stateChanged)
+    Q_PROPERTY(QString updateActionLabel READ updateActionLabel NOTIFY stateChanged)
     Q_PROPERTY(QString databasePath READ databasePath CONSTANT)
     Q_PROPERTY(QString downloadedFilePath READ downloadedFilePath NOTIFY stateChanged)
     Q_PROPERTY(bool checking READ checking NOTIFY stateChanged)
     Q_PROPERTY(bool downloading READ downloading NOTIFY stateChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY stateChanged)
     Q_PROPERTY(bool updateAvailable READ updateAvailable NOTIFY stateChanged)
+    Q_PROPERTY(bool canUpdate READ canUpdate NOTIFY stateChanged)
     Q_PROPERTY(int downloadProgress READ downloadProgress NOTIFY stateChanged)
 
 public:
@@ -40,21 +41,24 @@ public:
     [[nodiscard]] QString currentVersion() const;
     [[nodiscard]] QString latestVersion() const;
     [[nodiscard]] QString statusText() const;
-    [[nodiscard]] QString actionLabel() const;
+    [[nodiscard]] QString updateActionLabel() const;
     [[nodiscard]] QString databasePath() const;
     [[nodiscard]] QString downloadedFilePath() const;
     [[nodiscard]] bool checking() const;
     [[nodiscard]] bool downloading() const;
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool updateAvailable() const;
+    [[nodiscard]] bool canUpdate() const;
     [[nodiscard]] int downloadProgress() const;
 
     Q_INVOKABLE void checkForUpdates();
+    Q_INVOKABLE void downloadUpdate();
 
 signals:
     void stateChanged();
 
 private:
+    static QString formatVersionForDisplay(const QString &versionText);
     static QString normalizeVersion(const QString &versionText);
     static int compareVersions(const QString &left, const QString &right);
     static bool isMacAsset(const QString &assetName);
@@ -63,6 +67,7 @@ private:
     [[nodiscard]] QString findCompatibleAssetUrl(const QJsonArray &assets,
                                                  QString &assetName) const;
     [[nodiscard]] QString resolveDownloadDirectory() const;
+    [[nodiscard]] QString availableTargetFilePath() const;
 
     bool openDownloadedPackage();
     void startDownload(const QUrl &downloadUrl, const QString &targetFilePath);
@@ -78,6 +83,8 @@ private:
     QString m_latestVersion;
     QString m_statusText;
     QString m_downloadedFilePath;
+    QString m_availableAssetName;
+    QUrl m_availableAssetUrl;
     bool m_checking = false;
     bool m_downloading = false;
     int m_downloadProgress = -1;

@@ -113,6 +113,11 @@ int PaymentsViewModel::selectedOpenOrderCount() const
     return m_selectedOpenOrderCount;
 }
 
+QString PaymentsViewModel::preferredOrderId() const
+{
+    return m_preferredOrderId;
+}
+
 QVariantList PaymentsViewModel::payableOrders() const
 {
     return m_payableOrders;
@@ -137,6 +142,10 @@ void PaymentsViewModel::selectCustomer(const QString &customerId)
 {
     const QString normalizedId = customerId.trimmed();
     if (m_hasSelectedCustomer && m_selectedCustomerId == normalizedId) {
+        if (!m_preferredOrderId.isEmpty()) {
+            m_preferredOrderId.clear();
+            emit detailChanged();
+        }
         return;
     }
 
@@ -145,8 +154,23 @@ void PaymentsViewModel::selectCustomer(const QString &customerId)
         return;
     }
 
+    m_preferredOrderId.clear();
     m_hasSelectedCustomer = true;
     m_selectedCustomerId = normalizedId;
+    refreshSelectedData();
+}
+
+void PaymentsViewModel::focusOrder(const QString &customerId, const QString &orderId)
+{
+    const QString normalizedCustomerId = customerId.trimmed();
+    const QString normalizedOrderId = orderId.trimmed();
+    if (normalizedCustomerId.isEmpty() || normalizedOrderId.isEmpty()) {
+        return;
+    }
+
+    m_hasSelectedCustomer = true;
+    m_selectedCustomerId = normalizedCustomerId;
+    m_preferredOrderId = normalizedOrderId;
     refreshSelectedData();
 }
 
@@ -343,6 +367,20 @@ void PaymentsViewModel::refreshSelectedData()
     m_paymentHistory = newPaymentHistory;
     m_customerLedger = newCustomerLedger;
 
+    bool preferredStillVisible = false;
+    if (!m_preferredOrderId.isEmpty()) {
+        for (const QVariant &orderValue : m_payableOrders) {
+            const QVariantMap orderData = orderValue.toMap();
+            if (orderData.value(QStringLiteral("id")).toString() == m_preferredOrderId) {
+                preferredStillVisible = true;
+                break;
+            }
+        }
+    }
+    if (!preferredStillVisible) {
+        m_preferredOrderId.clear();
+    }
+
     emit selectedCustomerChanged();
     emit detailChanged();
 }
@@ -355,6 +393,7 @@ void PaymentsViewModel::clearSelection()
     m_hasSelectedCustomer = false;
     m_selectedCustomerId.clear();
     m_selectedCustomerName.clear();
+    m_preferredOrderId.clear();
     m_selectedReceivableVnd = 0;
     m_selectedOpenOrderCount = 0;
     m_payableOrders.clear();

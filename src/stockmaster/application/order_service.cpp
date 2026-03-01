@@ -89,6 +89,30 @@ QVector<domain::OrderItem> OrderService::findOrderItems(const QString &orderId) 
     return m_orderItemsByOrder.value(orderId.trimmed());
 }
 
+QVector<StockAllocationInfo> OrderService::findAllocations(const QString &orderId,
+                                                           const QString &orderItemId) const
+{
+    const QString normalizedOrderId = orderId.trimmed();
+    const QString normalizedOrderItemId = orderItemId.trimmed();
+
+    QVector<StockAllocationInfo> result;
+    result.reserve(m_stockAllocations.size());
+
+    for (const StockAllocationInfo &allocation : m_stockAllocations) {
+        if (allocation.orderId != normalizedOrderId) {
+            continue;
+        }
+
+        if (!normalizedOrderItemId.isEmpty() && allocation.orderItemId != normalizedOrderItemId) {
+            continue;
+        }
+
+        result.push_back(allocation);
+    }
+
+    return result;
+}
+
 bool OrderService::getOrderById(const QString &orderId, domain::Order &order) const
 {
     qsizetype index = -1;
@@ -255,12 +279,14 @@ bool OrderService::upsertDraftItem(const QString &orderId,
     QHash<QString, QVector<domain::OrderItem>> updatedItemsByOrder = m_orderItemsByOrder;
     QVector<domain::OrderItem> &items = updatedItemsByOrder[orderId.trimmed()];
 
+    QString targetOrderItemId;
     bool foundExisting = false;
     for (domain::OrderItem &item : items) {
         if (item.productId != normalizedProductId) {
             continue;
         }
 
+        targetOrderItemId = item.id;
         item.qty = input.qty;
         item.unitPriceVnd = input.unitPriceVnd;
         item.discountVnd = input.discountVnd;
@@ -277,17 +303,41 @@ bool OrderService::upsertDraftItem(const QString &orderId,
         item.unitPriceVnd = input.unitPriceVnd;
         item.discountVnd = input.discountVnd;
         item.lineTotalVnd = lineSubtotal - input.discountVnd;
+        targetOrderItemId = item.id;
         items.push_back(item);
+    }
+
+    QVector<StockAllocationInfo> plannedAllocations;
+    if (!planDraftAllocationsForItem(orderId.trimmed(),
+                                     targetOrderItemId,
+                                     input,
+                                     plannedAllocations,
+                                     errorMessage)) {
+        return false;
+    }
+
+    QVector<StockAllocationInfo> updatedAllocations = m_stockAllocations;
+    updatedAllocations.erase(
+        std::remove_if(updatedAllocations.begin(),
+                       updatedAllocations.end(),
+                       [&orderId, &targetOrderItemId](const StockAllocationInfo &allocation) {
+                           return allocation.orderId == orderId.trimmed()
+                                  && allocation.orderItemId == targetOrderItemId;
+                       }),
+        updatedAllocations.end());
+    for (const StockAllocationInfo &allocation : plannedAllocations) {
+        updatedAllocations.push_back(allocation);
     }
 
     recomputeOrderTotals(updatedOrders[index], items);
 
-    if (!persistState(updatedOrders, updatedItemsByOrder, m_stockAllocations, errorMessage)) {
+    if (!persistState(updatedOrders, updatedItemsByOrder, updatedAllocations, errorMessage)) {
         return false;
     }
 
     m_orders = updatedOrders;
     m_orderItemsByOrder = updatedItemsByOrder;
+    m_stockAllocations = updatedAllocations;
     errorMessage.clear();
     return true;
 }
@@ -317,15 +367,25 @@ bool OrderService::removeDraftItem(const QString &orderId,
         }
 
         items.remove(itemIndex);
+        QVector<StockAllocationInfo> updatedAllocations = m_stockAllocations;
+        updatedAllocations.erase(
+            std::remove_if(updatedAllocations.begin(),
+                           updatedAllocations.end(),
+                           [&orderId, &normalizedOrderItemId](const StockAllocationInfo &allocation) {
+                               return allocation.orderId == orderId.trimmed()
+                                      && allocation.orderItemId == normalizedOrderItemId;
+                           }),
+            updatedAllocations.end());
         QVector<domain::Order> updatedOrders = m_orders;
         recomputeOrderTotals(updatedOrders[index], items);
 
-        if (!persistState(updatedOrders, updatedItemsByOrder, m_stockAllocations, errorMessage)) {
+        if (!persistState(updatedOrders, updatedItemsByOrder, updatedAllocations, errorMessage)) {
             return false;
         }
 
         m_orders = updatedOrders;
         m_orderItemsByOrder = updatedItemsByOrder;
+        m_stockAllocations = updatedAllocations;
         errorMessage.clear();
         return true;
     }
@@ -353,12 +413,12 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
         return false;
     }
 
-    QVector<StockAllocation> plannedAllocations;
+    QVector<StockAllocationInfo> plannedAllocations;
     if (!planStockAllocations(order.id, items, plannedAllocations, errorMessage)) {
         return false;
     }
 
-    QVector<StockAllocation> appliedAllocations;
+    QVector<StockAllocationInfo> appliedAllocations;
     appliedAllocations.reserve(plannedAllocations.size());
     const QString confirmReason = QStringLiteral("Xác nhận đơn %1").arg(order.orderNo);
 
@@ -379,7 +439,7 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
         }
     };
 
-    for (const StockAllocation &allocation : plannedAllocations) {
+    for (const StockAllocationInfo &allocation : plannedAllocations) {
         QString stockError;
         if (!m_productService.stockOut(allocation.lotId,
                                        allocation.qty,
@@ -397,9 +457,16 @@ bool OrderService::confirmOrder(const QString &orderId, QString &errorMessage)
     }
 
     const domain::Order previousOrder = order;
-    const QVector<StockAllocation> previousAllocations = m_stockAllocations;
+    const QVector<StockAllocationInfo> previousAllocations = m_stockAllocations;
 
-    for (const StockAllocation &allocation : plannedAllocations) {
+    m_stockAllocations.erase(
+        std::remove_if(m_stockAllocations.begin(),
+                       m_stockAllocations.end(),
+                       [&order](const StockAllocationInfo &allocation) {
+                           return allocation.orderId == order.id;
+                       }),
+        m_stockAllocations.end());
+    for (const StockAllocationInfo &allocation : plannedAllocations) {
         m_stockAllocations.push_back(allocation);
     }
 
@@ -504,16 +571,16 @@ bool OrderService::voidOrder(const QString &orderId, QString &errorMessage)
         return false;
     }
 
-    QVector<StockAllocation> allocations;
+    QVector<StockAllocationInfo> allocations;
     if (order.status == domain::OrderStatus::Confirmed) {
-        for (const StockAllocation &allocation : m_stockAllocations) {
+        for (const StockAllocationInfo &allocation : m_stockAllocations) {
             if (allocation.orderId == order.id) {
                 allocations.push_back(allocation);
             }
         }
     }
 
-    QVector<StockAllocation> restoredAllocations;
+    QVector<StockAllocationInfo> restoredAllocations;
     restoredAllocations.reserve(allocations.size());
     const QString voidReason = QStringLiteral("Void đơn %1").arg(order.orderNo);
 
@@ -534,7 +601,7 @@ bool OrderService::voidOrder(const QString &orderId, QString &errorMessage)
         }
     };
 
-    for (const StockAllocation &allocation : allocations) {
+    for (const StockAllocationInfo &allocation : allocations) {
         QString stockError;
         if (!m_productService.stockIn(allocation.lotId,
                                       allocation.qty,
@@ -552,11 +619,11 @@ bool OrderService::voidOrder(const QString &orderId, QString &errorMessage)
     }
 
     const domain::Order previousOrder = order;
-    const QVector<StockAllocation> previousAllocations = m_stockAllocations;
+    const QVector<StockAllocationInfo> previousAllocations = m_stockAllocations;
 
     if (!allocations.isEmpty()) {
         m_stockAllocations.erase(
-            std::remove_if(m_stockAllocations.begin(), m_stockAllocations.end(), [&order](const StockAllocation &allocation) {
+            std::remove_if(m_stockAllocations.begin(), m_stockAllocations.end(), [&order](const StockAllocationInfo &allocation) {
                 return allocation.orderId == order.id;
             }),
             m_stockAllocations.end());
@@ -648,9 +715,85 @@ bool OrderService::ensureProductExists(const QString &productId) const
     return m_productService.productExists(productId);
 }
 
+bool OrderService::planDraftAllocationsForItem(const QString &orderId,
+                                               const QString &orderItemId,
+                                               const DraftOrderItemInput &input,
+                                               QVector<StockAllocationInfo> &planned,
+                                               QString &errorMessage) const
+{
+    planned.clear();
+
+    QVector<domain::ProductLot> lots = m_productService.findLotsByProduct(input.productId);
+    if (lots.isEmpty()) {
+        errorMessage = QStringLiteral("Sản phẩm chưa có lô tồn kho để chọn.");
+        return false;
+    }
+
+    qsizetype preferredIndex = -1;
+    const QString preferredLotId = input.preferredLotId.trimmed();
+    if (!preferredLotId.isEmpty()) {
+        for (qsizetype index = 0; index < lots.size(); ++index) {
+            if (lots[index].id == preferredLotId) {
+                preferredIndex = index;
+                break;
+            }
+        }
+
+        if (preferredIndex < 0) {
+            errorMessage = QStringLiteral("Lô được chọn không hợp lệ cho sản phẩm này.");
+            return false;
+        }
+    }
+
+    std::sort(lots.begin(), lots.end(), [](const domain::ProductLot &lhs, const domain::ProductLot &rhs) {
+        if (lhs.receivedDate == rhs.receivedDate) {
+            return lhs.lotNo < rhs.lotNo;
+        }
+
+        return lhs.receivedDate < rhs.receivedDate;
+    });
+
+    if (preferredIndex >= 0) {
+        auto preferredIt = std::find_if(lots.begin(), lots.end(), [&preferredLotId](const domain::ProductLot &lot) {
+            return lot.id == preferredLotId;
+        });
+        if (preferredIt != lots.end()) {
+            std::rotate(lots.begin(), preferredIt, preferredIt + 1);
+        }
+    }
+
+    int remainingQty = input.qty;
+    for (const domain::ProductLot &lot : lots) {
+        if (remainingQty <= 0) {
+            break;
+        }
+
+        if (lot.onHandQty <= 0) {
+            continue;
+        }
+
+        const int allocatedQty = std::min(remainingQty, lot.onHandQty);
+        if (allocatedQty <= 0) {
+            continue;
+        }
+
+        planned.push_back(StockAllocationInfo{orderId, orderItemId, lot.id, allocatedQty});
+        remainingQty -= allocatedQty;
+    }
+
+    if (remainingQty > 0) {
+        const QString productName = m_productService.productNameById(input.productId);
+        errorMessage = QStringLiteral("Không đủ tồn theo các lô hiện có cho sản phẩm: %1")
+                           .arg(productName.isEmpty() ? input.productId : productName);
+        return false;
+    }
+
+    return true;
+}
+
 bool OrderService::planStockAllocations(const QString &orderId,
                                         const QVector<domain::OrderItem> &items,
-                                        QVector<StockAllocation> &planned,
+                                        QVector<StockAllocationInfo> &planned,
                                         QString &errorMessage) const
 {
     planned.clear();
@@ -671,21 +814,50 @@ bool OrderService::planStockAllocations(const QString &orderId,
             return lhs.receivedDate < rhs.receivedDate;
         });
 
+        QHash<QString, int> availableByLotId;
+        availableByLotId.reserve(lots.size());
+        for (const domain::ProductLot &lot : lots) {
+            availableByLotId.insert(lot.id, lot.onHandQty);
+        }
+
+        const QVector<StockAllocationInfo> preferredAllocations = findAllocations(orderId, item.id);
+        for (const StockAllocationInfo &allocation : preferredAllocations) {
+            if (remainingQty <= 0) {
+                break;
+            }
+
+            if (!availableByLotId.contains(allocation.lotId) || allocation.qty <= 0) {
+                continue;
+            }
+
+            const int availableQty = availableByLotId.value(allocation.lotId);
+            const int allocatedQty = std::min({allocation.qty, availableQty, remainingQty});
+            if (allocatedQty <= 0) {
+                continue;
+            }
+
+            planned.push_back(StockAllocationInfo{orderId, item.id, allocation.lotId, allocatedQty});
+            availableByLotId.insert(allocation.lotId, availableQty - allocatedQty);
+            remainingQty -= allocatedQty;
+        }
+
         for (const domain::ProductLot &lot : lots) {
             if (remainingQty <= 0) {
                 break;
             }
 
-            if (lot.onHandQty <= 0) {
+            const int availableQty = availableByLotId.value(lot.id);
+            if (availableQty <= 0) {
                 continue;
             }
 
-            const int allocatedQty = std::min(remainingQty, lot.onHandQty);
+            const int allocatedQty = std::min(remainingQty, availableQty);
             if (allocatedQty <= 0) {
                 continue;
             }
 
-            planned.push_back(StockAllocation{orderId, item.id, lot.id, allocatedQty});
+            planned.push_back(StockAllocationInfo{orderId, item.id, lot.id, allocatedQty});
+            availableByLotId.insert(lot.id, availableQty - allocatedQty);
             remainingQty -= allocatedQty;
         }
 
@@ -818,7 +990,7 @@ bool OrderService::loadFromDatabase()
     }
 
     while (allocationQuery.next()) {
-        m_stockAllocations.push_back(StockAllocation{
+        m_stockAllocations.push_back(StockAllocationInfo{
             allocationQuery.value(0).toString(),
             allocationQuery.value(1).toString(),
             allocationQuery.value(2).toString(),
@@ -832,7 +1004,7 @@ bool OrderService::loadFromDatabase()
 
 bool OrderService::persistState(const QVector<domain::Order> &orders,
                                 const QHash<QString, QVector<domain::OrderItem>> &orderItemsByOrder,
-                                const QVector<StockAllocation> &stockAllocations,
+                                const QVector<StockAllocationInfo> &stockAllocations,
                                 QString &errorMessage) const
 {
     if (!m_databaseService.isReady()) {
@@ -927,7 +1099,7 @@ bool OrderService::persistState(const QVector<domain::Order> &orders,
         return rollbackWith(insertAllocationQuery.lastError().text());
     }
 
-    for (const StockAllocation &allocation : stockAllocations) {
+    for (const StockAllocationInfo &allocation : stockAllocations) {
         insertAllocationQuery.bindValue(QStringLiteral(":order_id"), allocation.orderId);
         insertAllocationQuery.bindValue(QStringLiteral(":order_item_id"), allocation.orderItemId);
         insertAllocationQuery.bindValue(QStringLiteral(":lot_id"), allocation.lotId);

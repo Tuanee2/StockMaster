@@ -18,6 +18,21 @@ Flickable {
         return combo.model[combo.currentIndex].id
     }
 
+    function setComboIndexById(combo, id) {
+        if (!combo || !combo.model) {
+            return
+        }
+
+        for (let i = 0; i < combo.model.length; ++i) {
+            if (combo.model[i].id === id) {
+                combo.currentIndex = i
+                return
+            }
+        }
+
+        combo.currentIndex = -1
+    }
+
     component ActionButton: Button {
         id: control
 
@@ -93,6 +108,11 @@ Flickable {
 
             if (payableOrderCombo.model.length === 0) {
                 payableOrderCombo.currentIndex = -1
+            } else if (paymentsViewModel.preferredOrderId.length > 0) {
+                root.setComboIndexById(payableOrderCombo, paymentsViewModel.preferredOrderId)
+                if (payableOrderCombo.currentIndex < 0) {
+                    payableOrderCombo.currentIndex = 0
+                }
             } else if (payableOrderCombo.currentIndex < 0 || payableOrderCombo.currentIndex >= payableOrderCombo.model.length) {
                 payableOrderCombo.currentIndex = 0
             }
@@ -106,6 +126,12 @@ Flickable {
     Component.onCompleted: {
         paymentsViewModel.reload()
         appViewModel.refreshOverview()
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            paymentsViewModel.reload()
+        }
     }
 
     ColumnLayout {

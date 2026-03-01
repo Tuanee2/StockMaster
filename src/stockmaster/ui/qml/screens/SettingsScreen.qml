@@ -7,6 +7,7 @@ Item {
     id: root
 
     readonly property bool hasDownloadedPackage: settingsViewModel.downloadedFilePath.length > 0
+    readonly property bool canRunUpdate: settingsViewModel.canUpdate && !settingsViewModel.busy
     readonly property color statusFill: hasDownloadedPackage
         ? "#E6F6EA"
         : (settingsViewModel.updateAvailable ? "#EEF4FF" : "#F4F7FB")
@@ -17,15 +18,34 @@ Item {
         ? "#24543A"
         : (settingsViewModel.updateAvailable ? "#214875" : "#40536C")
 
-    onVisibleChanged: {
-        if (visible) {
-            settingsViewModel.checkForUpdates()
-        }
-    }
+    component ActionButton: Button {
+        id: control
 
-    Component.onCompleted: {
-        if (visible) {
-            settingsViewModel.checkForUpdates()
+        property color fillColor: "#2D6CDF"
+
+        implicitHeight: 44
+        padding: 12
+        hoverEnabled: true
+
+        background: Rectangle {
+            radius: 12
+            color: !control.enabled
+                ? "#B9CCE2"
+                : (control.down
+                    ? Qt.darker(control.fillColor, 1.15)
+                    : (control.hovered ? Qt.lighter(control.fillColor, 1.08) : control.fillColor))
+            border.width: 1
+            border.color: !control.enabled ? "#AFC1D8" : Qt.darker(control.fillColor, 1.2)
+        }
+
+        contentItem: Text {
+            text: control.text
+            color: "#FFFFFF"
+            font.pixelSize: 14
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
         }
     }
 
@@ -36,7 +56,7 @@ Item {
         SectionHeader {
             Layout.fillWidth: true
             title: "Cập nhật phần mềm"
-            subtitle: "Khi mở mục này, ứng dụng sẽ tự kiểm tra, tải và mở gói cập nhật nếu GitHub Release có bản mới phù hợp."
+            subtitle: "Bấm kiểm tra để đọc bản mới nhất trên GitHub Release. Chỉ khi có bản phù hợp thì nút cập nhật mới bật để tải và mở gói cài đặt."
         }
 
         Rectangle {
@@ -162,35 +182,24 @@ Item {
                     }
                 }
 
-                Button {
-                    id: updateButton
-
+                RowLayout {
                     Layout.fillWidth: true
-                    implicitHeight: 48
-                    enabled: !settingsViewModel.busy
-                    text: settingsViewModel.actionLabel
-                    hoverEnabled: true
-                    onClicked: settingsViewModel.checkForUpdates()
+                    spacing: 10
 
-                    background: Rectangle {
-                        radius: 12
-                        color: !updateButton.enabled
-                            ? "#B9CCE2"
-                            : (updateButton.down
-                                ? "#1C4D82"
-                                : (updateButton.hovered ? "#2B6CB0" : "#255D9C"))
-                        border.width: 1
-                        border.color: !updateButton.enabled ? "#AFC1D8" : "#1A4A7B"
+                    ActionButton {
+                        Layout.fillWidth: true
+                        fillColor: "#255D9C"
+                        enabled: !settingsViewModel.busy
+                        text: settingsViewModel.checking ? "Đang kiểm tra..." : "Kiểm tra phiên bản"
+                        onClicked: settingsViewModel.checkForUpdates()
                     }
 
-                    contentItem: Text {
-                        text: updateButton.text
-                        color: "#FFFFFF"
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
+                    ActionButton {
+                        Layout.fillWidth: true
+                        fillColor: "#2E8B57"
+                        enabled: root.canRunUpdate
+                        text: settingsViewModel.updateActionLabel
+                        onClicked: settingsViewModel.downloadUpdate()
                     }
                 }
 
@@ -219,7 +228,7 @@ Item {
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
-                            text: "Bản cập nhật sẽ tải gói cài đặt mới và tự mở gói sau khi tải xong. Dữ liệu cũ vẫn được giữ nguyên vì SQLite đang nằm trong thư mục AppData riêng của người dùng."
+                            text: "Bản cập nhật chỉ được tải khi bạn chủ động bấm nút \"Cập nhật\". Sau khi tải xong, app sẽ mở gói cài đặt. Dữ liệu cũ vẫn được giữ nguyên vì SQLite đang nằm trong thư mục AppData riêng của người dùng."
                             font.pixelSize: 13
                             color: "#465970"
                             lineHeight: 1.35

@@ -19,7 +19,10 @@ build/Qt_6_9_3_for_macOS-Debug/appStockMaster.app/Contents/MacOS/appStockMaster
 ## 3) Notes
 
 - Project đang dùng Qt6 Quick + Qt6 Sql.
+- App ép `Qt Quick Controls` dùng style `Basic` ngay từ `main.cpp` để cho phép custom `background` / `contentItem` trong QML và tránh warning của native macOS style.
 - App target hiện link thêm `Qt6 Network` để kiểm tra GitHub Release và tải gói cập nhật từ màn `Settings`.
+- `Main.qml` khởi động cửa sổ ở trạng thái `maximized` để phủ kín màn hình làm việc ngay khi mở app.
+- Version runtime mặc định lấy từ `project(StockMaster VERSION ...)`; nếu cần override riêng cho build phát hành thì dùng cache variable `STOCKMASTER_RUNTIME_VERSION_OVERRIDE`.
 - QML được đóng gói qua `qt_add_qml_module` trong `CMakeLists.txt`.
 - Sau khi thay đổi UI hoặc ViewModel, nên build lại ngay để bắt lỗi QML/C++ binding.
 

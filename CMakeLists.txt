@@ -1,14 +1,19 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(StockMaster VERSION 0.1 LANGUAGES CXX)
+project(StockMaster VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(STOCKMASTER_RUNTIME_VERSION "${PROJECT_VERSION}" CACHE STRING "Runtime application version for release/update checks")
+set(STOCKMASTER_RUNTIME_VERSION_OVERRIDE "" CACHE STRING "Override runtime application version for release/update checks")
+if(STOCKMASTER_RUNTIME_VERSION_OVERRIDE)
+    set(STOCKMASTER_RUNTIME_VERSION "${STOCKMASTER_RUNTIME_VERSION_OVERRIDE}")
+else()
+    set(STOCKMASTER_RUNTIME_VERSION "${PROJECT_VERSION}")
+endif()
 
 include(CTest)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Sql Network)
+find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Sql Network)
 
 qt_standard_project_setup(REQUIRES 6.5)
 qt_policy(SET QTP0004 NEW)
@@ -79,7 +84,7 @@ target_compile_definitions(appStockMaster
 set_target_properties(appStockMaster PROPERTIES
 #    MACOSX_BUNDLE_GUI_IDENTIFIER com.example.appStockMaster
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
@@ -87,6 +92,7 @@ set_target_properties(appStockMaster PROPERTIES
 target_link_libraries(appStockMaster
     PRIVATE
         Qt6::Quick
+        Qt6::QuickControls2
         Qt6::Sql
         Qt6::Network
 )
@@ -185,6 +191,27 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME inventory_service_smoke COMMAND inventory_service_smoke)
+
+    add_executable(order_allocation_smoke
+        tests/order_allocation_smoke.cpp
+        src/stockmaster/application/customer_service.cpp
+        src/stockmaster/application/order_service.cpp
+        src/stockmaster/application/product_service.cpp
+        src/stockmaster/infra/db/database_service.cpp
+    )
+
+    target_include_directories(order_allocation_smoke
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(order_allocation_smoke
+        PRIVATE
+            Qt6::Quick
+            Qt6::Sql
+    )
+
+    add_test(NAME order_allocation_smoke COMMAND order_allocation_smoke)
 
     add_executable(payment_service_smoke
         tests/payment_service_smoke.cpp

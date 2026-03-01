@@ -9,6 +9,53 @@ Item {
     property string editingCustomerId: ""
     property string currentCustomerCode: "Tự sinh khi lưu"
 
+    component ActionButton: Button {
+        id: control
+
+        property color fillColor: "#2D6CDF"
+
+        implicitHeight: 36
+        padding: 12
+
+        background: Rectangle {
+            radius: 8
+            color: control.enabled ? control.fillColor : "#B8C6D6"
+            border.width: 1
+            border.color: control.enabled ? Qt.darker(control.fillColor, 1.15) : "#9AAEC1"
+        }
+
+        contentItem: Text {
+            text: control.text
+            color: "#FFFFFF"
+            font.pixelSize: 13
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+    }
+
+    component SolidTextField: TextField {
+        implicitHeight: 36
+        font.pixelSize: 13
+        color: enabled ? "#24364D" : "#6F8299"
+        placeholderTextColor: "#7286A0"
+        selectionColor: "#9DC0EA"
+        selectedTextColor: "#132338"
+
+        background: Rectangle {
+            radius: 8
+            color: parent.enabled ? "#ECF3FB" : "#E5EDF6"
+            border.width: 1
+            border.color: parent.activeFocus ? "#4F83CC" : "#A9C0DA"
+        }
+    }
+
+    function refreshDependentViews() {
+        ordersViewModel.reload()
+        paymentsViewModel.reload()
+    }
+
     function clearForm() {
         editingCustomerId = ""
         currentCustomerCode = "Tự sinh khi lưu"
@@ -68,7 +115,7 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
 
-                        TextField {
+                        SolidTextField {
                             id: searchField
 
                             Layout.fillWidth: true
@@ -76,8 +123,9 @@ Item {
                             onTextChanged: customersViewModel.filterText = text
                         }
 
-                        Button {
+                        ActionButton {
                             text: "Xóa lọc"
+                            fillColor: "#607D9C"
                             enabled: searchField.text.length > 0
                             onClicked: searchField.clear()
                         }
@@ -198,7 +246,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: nameField
 
                             Layout.fillWidth: true
@@ -210,7 +258,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: phoneField
 
                             Layout.fillWidth: true
@@ -222,7 +270,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: addressField
 
                             Layout.fillWidth: true
@@ -234,7 +282,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: creditLimitField
 
                             Layout.fillWidth: true
@@ -270,14 +318,15 @@ Item {
                         Layout.fillWidth: true
                         spacing: 8
 
-                        Button {
+                        ActionButton {
                             text: "Tạo mới"
+                            fillColor: "#607D9C"
                             onClicked: root.clearForm()
                         }
 
-                        Button {
+                        ActionButton {
                             text: editingCustomerId.length > 0 ? "Lưu thay đổi" : "Thêm khách hàng"
-                            highlighted: true
+                            fillColor: "#2D6CDF"
                             onClicked: {
                                 let success = false
                                 if (editingCustomerId.length > 0) {
@@ -296,6 +345,7 @@ Item {
                                 }
 
                                 if (success) {
+                                    root.refreshDependentViews()
                                     appViewModel.refreshOverview()
                                     if (editingCustomerId.length === 0) {
                                         root.clearForm()
@@ -304,11 +354,13 @@ Item {
                             }
                         }
 
-                        Button {
+                        ActionButton {
                             text: "Xóa"
+                            fillColor: "#C05A2A"
                             enabled: editingCustomerId.length > 0
                             onClicked: {
                                 if (customersViewModel.deleteCustomer(editingCustomerId)) {
+                                    root.refreshDependentViews()
                                     appViewModel.refreshOverview()
                                     root.clearForm()
                                 }

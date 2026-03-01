@@ -72,9 +72,12 @@
 - Tạo draft order (`createDraftOrder`) với mã `ORD00001`, `ORD00002`, ...
 - Cập nhật khách của draft (`updateDraftOrderCustomer`).
 - Upsert item draft theo `productId` (`upsertDraftItem`).
+  - cho phép chọn lô ưu tiên ngay khi thêm item
+  - tự tách allocation qua nhiều lô nếu lô đã chọn không đủ qty
 - Xóa item draft (`removeDraftItem`).
 - Confirm order (`confirmOrder`) -> trừ kho theo lô.
 - Void order (`voidOrder`) -> hoàn kho (nếu đơn đã confirm).
+- Cho phép đọc lại allocation theo đơn / order item (`findAllocations`).
 - Load dữ liệu từ:
   - `orders`
   - `order_items`
@@ -84,8 +87,10 @@
   - gồm cả cảnh báo mặt hàng có lô sắp hết hạn trong 30 ngày.
 
 ### Cách trừ kho khi confirm
-- Lập kế hoạch cấp phát từ các lô của sản phẩm.
-- Sắp theo `receivedDate` tăng dần, rồi `lotNo` tăng dần.
+- Ưu tiên dùng allocation đã lưu từ lúc chọn lô trong draft.
+- Nếu allocation draft chưa đủ:
+  - tự lấy tiếp từ các lô còn lại của cùng sản phẩm
+  - theo `receivedDate` tăng dần, rồi `lotNo` tăng dần.
 - Trừ kho lần lượt đến khi đủ qty item.
 - Nếu trừ kho giữa chừng lỗi: rollback các lô đã trừ trước đó.
 - Khi confirm thành công, mỗi lần trừ kho đều ghi movement với lý do dạng `Xác nhận đơn <orderNo>`.

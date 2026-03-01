@@ -31,6 +31,7 @@ class OrdersViewModel : public QAbstractListModel {
     Q_PROPERTY(bool canEditDraft READ canEditDraft NOTIFY selectedOrderChanged)
     Q_PROPERTY(bool canConfirm READ canConfirm NOTIFY selectedOrderChanged)
     Q_PROPERTY(bool canVoid READ canVoid NOTIFY selectedOrderChanged)
+    Q_PROPERTY(bool canOpenPayment READ canOpenPayment NOTIFY selectedOrderChanged)
     Q_PROPERTY(QVariantList selectedOrderItems READ selectedOrderItems NOTIFY selectedOrderItemsChanged)
     Q_PROPERTY(QVariantList customers READ customers NOTIFY lookupChanged)
     Q_PROPERTY(QVariantList products READ products NOTIFY lookupChanged)
@@ -72,6 +73,7 @@ public:
     [[nodiscard]] bool canEditDraft() const;
     [[nodiscard]] bool canConfirm() const;
     [[nodiscard]] bool canVoid() const;
+    [[nodiscard]] bool canOpenPayment() const;
 
     [[nodiscard]] QVariantList selectedOrderItems() const;
     [[nodiscard]] QVariantList customers() const;
@@ -83,6 +85,7 @@ public:
     Q_INVOKABLE bool updateSelectedOrderCustomer(const QString &customerId);
 
     Q_INVOKABLE bool addOrUpdateDraftItem(const QString &productId,
+                                          const QString &preferredLotId,
                                           const QString &qtyText,
                                           const QString &unitPriceText,
                                           const QString &discountText);
@@ -92,6 +95,10 @@ public:
     Q_INVOKABLE bool voidSelectedOrder();
 
     Q_INVOKABLE QString defaultPriceTextForProduct(const QString &productId) const;
+    Q_INVOKABLE QVariantList lotsForProduct(const QString &productId) const;
+    Q_INVOKABLE QVariantList previewAllocations(const QString &productId,
+                                                const QString &preferredLotId,
+                                                const QString &qtyText) const;
     Q_INVOKABLE QString orderIdAt(int row) const;
     Q_INVOKABLE bool applyOrderQuery(const QString &orderNo,
                                      const QString &fromDate,
@@ -112,6 +119,9 @@ private:
     [[nodiscard]] bool parseMoneyInput(const QString &input, core::Money &value) const;
     [[nodiscard]] bool parsePositiveInt(const QString &input, int &value) const;
     [[nodiscard]] bool selectedOrderInStatus(domain::OrderStatus status) const;
+    [[nodiscard]] QVariantList buildAllocationPreview(const QString &productId,
+                                                      const QString &preferredLotId,
+                                                      int qty) const;
     [[nodiscard]] bool validateAndNormalizeQuery(const QString &orderNo,
                                                  const QString &fromDate,
                                                  const QString &toDate,

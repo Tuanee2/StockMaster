@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 
 #include "stockmaster/application/customer_service.h"
 #include "stockmaster/application/order_service.h"
@@ -19,6 +20,8 @@
 
 int main(int argc, char *argv[])
 {
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("StockMaster"));
     app.setApplicationVersion(QStringLiteral(STOCKMASTER_APP_VERSION));

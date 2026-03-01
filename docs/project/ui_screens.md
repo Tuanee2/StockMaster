@@ -3,6 +3,7 @@
 ## 1) Main và App Shell
 
 - `Main.qml`: `ApplicationWindow` + mount `AppShell`.
+- `Main.qml` mở ở trạng thái `maximized` để app phủ kín màn hình ngay khi khởi động.
 - `AppShell.qml`:
   - sidebar section list hiển thị tiếng Việt:
     - Tổng quan
@@ -39,7 +40,7 @@
     - cảnh báo tồn thấp
     - cảnh báo lô sắp hết hạn
 - Tầng 2: phân tích
-  - biểu đồ cột đôi `Doanh số và thu tiền 6 tháng`
+  - biểu đồ cột đôi `Doanh số và thu tiền 7 ngày gần nhất`
   - `Top khách hàng theo doanh số`
   - `Top sản phẩm bán chạy`
 
@@ -52,6 +53,10 @@
   - form thêm/sửa/xóa khách
   - mã khách chỉ hiển thị, không nhập tay (tự sinh khi lưu)
   - vùng báo lỗi `lastError`
+- Input và nút thao tác chính đã dùng cùng style `SolidTextField` / `ActionButton`
+  như `Tồn kho` và `Đơn hàng` để giữ màu nền, border và chiều cao đồng bộ
+- Sau khi thêm/sửa/xóa khách:
+  - màn `Đơn hàng` và `Thanh toán` sẽ reload lookup để thấy dữ liệu khách mới ngay
 
 ## 4) ProductsScreen
 
@@ -60,6 +65,7 @@
   - list sản phẩm + tồn tổng + số lô
 - Bên phải:
   - form CRUD sản phẩm
+    - mã sản phẩm chỉ hiển thị, không nhập tay khi tạo mới (tự sinh khi lưu)
   - khối quản lý lô cho sản phẩm đang chọn
     - có `Ngày nhập` và `Hạn dùng` khi thêm lô
     - cảnh báo số lô sắp hết hạn trong 30 ngày
@@ -70,6 +76,7 @@
 UI đã được chỉnh:
 - action button màu solid (không trong suốt)
 - field sử dụng layout fill/min width để hạn chế tràn khi thu nhỏ
+- form sản phẩm, thêm lô và nhập/xuất đang dùng cùng style field với `Tồn kho` / `Đơn hàng`
 
 ## 5) OrdersScreen
 
@@ -87,20 +94,28 @@ Màn hình chia 2 cột rõ ràng:
 ### Cột phải: Điều hướng nghiệp vụ Order
 - Thanh tab nhỏ:
   - `Tạo Draft`
-  - `Chi tiết đơn`
   - `Item & Xử lý`
-- Tab `Tạo Draft`: tạo draft mới.
-- Tab `Chi tiết đơn`: xem và đổi khách hàng của draft.
+  - `Chi tiết đơn`
+- Tab `Tạo Draft`:
+  - có ô tìm khách theo tên / mã / số điện thoại
+  - tạo draft mới
 - Tab `Item & Xử lý`:
   - thêm/cập nhật/xóa item
+  - chọn sản phẩm + chọn lô ưu tiên
+  - xem preview phân bổ qty qua nhiều lô nếu lô đang chọn không đủ
   - confirm (trừ kho)
   - void (hoàn kho)
+  - có nút nhảy thẳng sang `Thanh toán` cho đơn đang chọn
+- Tab `Chi tiết đơn`:
+  - có ô tìm khách theo tên / số điện thoại
+  - xem và đổi khách hàng của draft
 - Có `lastError` banner hiển thị lỗi nghiệp vụ.
 
 UI đã được chỉnh:
 - textfield/combo custom solid background
 - màu chữ và placeholder tương phản nền sáng
 - layout ngang, không dùng bố cục trên/dưới như bản cũ
+- khi chuyển vào màn `Đơn hàng`, viewmodel sẽ reload lại lookup khách/sản phẩm để tránh giữ cache cũ
 
 ## 6) PaymentsScreen
 
@@ -125,6 +140,8 @@ Rule UI đang phản ánh:
 - không cho lập phiếu thu nếu khách không có đơn chờ thu
 - nhắc rõ phiếu thu tự chặn over-payment
 - sau khi thu tiền, dashboard và công nợ cập nhật lại
+- khi chuyển vào màn `Thanh toán`, danh sách khách sẽ reload lại để nhận dữ liệu mới nhất
+- nếu được điều hướng từ `Đơn hàng`, combobox đơn sẽ ưu tiên chọn đúng đơn vừa chuyển sang
 
 ## 7) InventoryScreen
 
@@ -154,15 +171,20 @@ Rule UI đang phản ánh:
 
 - Không còn là placeholder.
 - Mục tiêu hiện tại: chỉ làm updater tối giản cho desktop release.
-- Khi tab được mở:
-  - tự kiểm tra GitHub Release mới nhất
-  - nếu có bản mới đúng nền tảng thì tự tải gói cập nhật
+- Không tự kiểm tra khi vừa mở tab.
+- Trong phần nội dung có 2 nút thao tác:
+  - `Kiểm tra phiên bản`
+  - `Cập nhật`
+- Nút `Cập nhật` chỉ bật khi:
+  - đã kiểm tra xong
+  - có bản mới
+  - có gói đúng nền tảng hiện tại
+- Khi bấm `Cập nhật`:
+  - app mới bắt đầu tải gói cập nhật
   - sau khi tải xong sẽ tự mở gói vừa tải
-- Trong phần nội dung chỉ giữ 1 nút thao tác:
-  - `Kiểm tra và tải bản cập nhật`
 - Hiển thị:
-  - version hiện tại
-  - version mới nhất trên release
+  - version hiện tại (format semantic `x.y.z`)
+  - version mới nhất trên release (format semantic `x.y.z`)
   - trạng thái kiểm tra/tải
   - progress tải
   - đường dẫn DB local

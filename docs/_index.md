@@ -14,7 +14,8 @@ File này là bản đồ tài liệu chính thức cho agent và developer.
 8. `docs/data_model.md`
 9. `docs/use_case.md`
 10. `docs/project/_index.md`
-11. `src/` (code là source of truth)
+11. `docs/project/user_guide.md`
+12. `src/` (code là source of truth)
 
 Nguyên tắc:
 - Khi docs và code mâu thuẫn: tin code.
@@ -48,6 +49,13 @@ Nguyên tắc:
 Đọc:
 - `docs/project/_index.md`
 - `docs/project/overview.md`
+- `docs/project/user_guide.md`
+- `docs/project/current_features_and_gaps.md`
+
+### Viết hướng dẫn sử dụng hoặc SOP cho người dùng
+Đọc:
+- `docs/project/user_guide.md`
+- `docs/project/ui_screens.md`
 - `docs/project/current_features_and_gaps.md`
 
 ## Golden Rules

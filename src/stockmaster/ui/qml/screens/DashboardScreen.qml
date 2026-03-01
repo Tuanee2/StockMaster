@@ -321,7 +321,7 @@ Flickable {
                         spacing: 2
 
                         Text {
-                            text: "Doanh số và thu tiền 6 tháng"
+                            text: "Doanh số và thu tiền 7 ngày gần nhất"
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
                             color: "#1B2B40"
@@ -377,7 +377,7 @@ Flickable {
                     Text {
                         anchors.centerIn: parent
                         visible: !appViewModel.hasMonthlyActivity
-                        text: "Chưa có dữ liệu giao dịch trong 6 tháng gần đây."
+                        text: "Chưa có dữ liệu giao dịch trong 7 ngày gần đây."
                         font.pixelSize: 13
                         color: "#7286A0"
                     }

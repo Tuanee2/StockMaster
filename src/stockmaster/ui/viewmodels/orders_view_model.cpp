@@ -3,6 +3,9 @@
 #include <QDate>
 #include <QLocale>
 #include <QRegularExpression>
+#include <QStringList>
+
+#include <algorithm>
 
 #include "stockmaster/application/customer_service.h"
 #include "stockmaster/application/product_service.h"
@@ -150,6 +153,14 @@ bool OrdersViewModel::canVoid() const
            || selectedOrderInStatus(domain::OrderStatus::Confirmed);
 }
 
+bool OrdersViewModel::canOpenPayment() const
+{
+    return m_hasSelectedOrder
+           && !m_selectedOrder.customerId.trimmed().isEmpty()
+           && (m_selectedOrder.status == domain::OrderStatus::Confirmed
+               || m_selectedOrder.status == domain::OrderStatus::PartiallyPaid);
+}
+
 QVariantList OrdersViewModel::selectedOrderItems() const
 {
     return m_selectedOrderItems;
@@ -245,6 +256,7 @@ bool OrdersViewModel::updateSelectedOrderCustomer(const QString &customerId)
 }
 
 bool OrdersViewModel::addOrUpdateDraftItem(const QString &productId,
+                                           const QString &preferredLotId,
                                            const QString &qtyText,
                                            const QString &unitPriceText,
                                            const QString &discountText)
@@ -277,7 +289,7 @@ bool OrdersViewModel::addOrUpdateDraftItem(const QString &productId,
     QString errorMessage;
     const bool success = m_orderService.upsertDraftItem(
         m_selectedOrder.id,
-        application::DraftOrderItemInput{productId, qty, unitPriceVnd, discountVnd},
+        application::DraftOrderItemInput{productId, qty, unitPriceVnd, discountVnd, preferredLotId},
         errorMessage);
 
     if (!success) {
@@ -359,6 +371,58 @@ bool OrdersViewModel::voidSelectedOrder()
 QString OrdersViewModel::defaultPriceTextForProduct(const QString &productId) const
 {
     return QString::number(m_productService.defaultPriceByProductId(productId));
+}
+
+QVariantList OrdersViewModel::lotsForProduct(const QString &productId) const
+{
+    const QString normalizedProductId = productId.trimmed();
+    if (normalizedProductId.isEmpty()) {
+        return {};
+    }
+
+    QVector<domain::ProductLot> lots = m_productService.findLotsByProduct(normalizedProductId);
+    std::sort(lots.begin(), lots.end(), [](const domain::ProductLot &lhs, const domain::ProductLot &rhs) {
+        if (lhs.receivedDate == rhs.receivedDate) {
+            return lhs.lotNo < rhs.lotNo;
+        }
+
+        return lhs.receivedDate < rhs.receivedDate;
+    });
+
+    QVariantList result;
+    result.reserve(lots.size());
+    for (const domain::ProductLot &lot : lots) {
+        if (lot.onHandQty <= 0) {
+            continue;
+        }
+
+        result.push_back(QVariantMap{
+            {QStringLiteral("id"), lot.id},
+            {QStringLiteral("lotNo"), lot.lotNo},
+            {QStringLiteral("onHandQty"), lot.onHandQty},
+            {QStringLiteral("receivedDate"), lot.receivedDate},
+            {QStringLiteral("expiryDate"), lot.expiryDate},
+            {QStringLiteral("label"),
+             QStringLiteral("%1 | Còn %2 | HSD %3")
+                 .arg(lot.lotNo)
+                 .arg(lot.onHandQty)
+                 .arg(lot.expiryDate)},
+        });
+    }
+
+    return result;
+}
+
+QVariantList OrdersViewModel::previewAllocations(const QString &productId,
+                                                 const QString &preferredLotId,
+                                                 const QString &qtyText) const
+{
+    int qty = 0;
+    if (!parsePositiveInt(qtyText, qty)) {
+        return {};
+    }
+
+    return buildAllocationPreview(productId, preferredLotId, qty);
 }
 
 QString OrdersViewModel::orderIdAt(int row) const
@@ -480,6 +544,83 @@ bool OrdersViewModel::parsePositiveInt(const QString &input, int &value) const
 bool OrdersViewModel::selectedOrderInStatus(domain::OrderStatus status) const
 {
     return m_hasSelectedOrder && m_selectedOrder.status == status;
+}
+
+QVariantList OrdersViewModel::buildAllocationPreview(const QString &productId,
+                                                     const QString &preferredLotId,
+                                                     int qty) const
+{
+    const QString normalizedProductId = productId.trimmed();
+    if (normalizedProductId.isEmpty() || qty <= 0) {
+        return {};
+    }
+
+    QVector<domain::ProductLot> lots = m_productService.findLotsByProduct(normalizedProductId);
+    if (lots.isEmpty()) {
+        return {};
+    }
+
+    std::sort(lots.begin(), lots.end(), [](const domain::ProductLot &lhs, const domain::ProductLot &rhs) {
+        if (lhs.receivedDate == rhs.receivedDate) {
+            return lhs.lotNo < rhs.lotNo;
+        }
+
+        return lhs.receivedDate < rhs.receivedDate;
+    });
+
+    const QString normalizedPreferredLotId = preferredLotId.trimmed();
+    if (!normalizedPreferredLotId.isEmpty()) {
+        auto preferredIt = std::find_if(lots.begin(), lots.end(), [&normalizedPreferredLotId](const domain::ProductLot &lot) {
+            return lot.id == normalizedPreferredLotId;
+        });
+        if (preferredIt != lots.end()) {
+            std::rotate(lots.begin(), preferredIt, preferredIt + 1);
+        }
+    }
+
+    int remainingQty = qty;
+    QVariantList preview;
+
+    for (const domain::ProductLot &lot : lots) {
+        if (remainingQty <= 0) {
+            break;
+        }
+
+        if (lot.onHandQty <= 0) {
+            continue;
+        }
+
+        const int allocatedQty = std::min(remainingQty, lot.onHandQty);
+        if (allocatedQty <= 0) {
+            continue;
+        }
+
+        preview.push_back(QVariantMap{
+            {QStringLiteral("lotId"), lot.id},
+            {QStringLiteral("lotNo"), lot.lotNo},
+            {QStringLiteral("allocatedQty"), allocatedQty},
+            {QStringLiteral("onHandQty"), lot.onHandQty},
+            {QStringLiteral("label"),
+             QStringLiteral("%1: lấy %2 / còn %3")
+                 .arg(lot.lotNo)
+                 .arg(allocatedQty)
+                 .arg(lot.onHandQty)},
+        });
+        remainingQty -= allocatedQty;
+    }
+
+    if (remainingQty > 0) {
+        preview.push_back(QVariantMap{
+            {QStringLiteral("lotId"), QString()},
+            {QStringLiteral("lotNo"), QStringLiteral("Thiếu tồn")},
+            {QStringLiteral("allocatedQty"), -remainingQty},
+            {QStringLiteral("onHandQty"), 0},
+            {QStringLiteral("label"),
+             QStringLiteral("Thiếu %1 để đủ số lượng yêu cầu").arg(remainingQty)},
+        });
+    }
+
+    return preview;
 }
 
 bool OrdersViewModel::validateAndNormalizeQuery(const QString &orderNo,
@@ -631,6 +772,22 @@ void OrdersViewModel::refreshSelectedOrder()
 
     for (const domain::OrderItem &item : orderItems) {
         const QString productName = m_productService.productNameById(item.productId);
+        const QVector<domain::ProductLot> productLots = m_productService.findLotsByProduct(item.productId);
+        QStringList allocationParts;
+        const QVector<application::StockAllocationInfo> allocations = m_orderService.findAllocations(order.id, item.id);
+        const QString primaryLotId = allocations.isEmpty() ? QString() : allocations.first().lotId;
+        for (const application::StockAllocationInfo &allocation : allocations) {
+            QString lotLabel = allocation.lotId;
+            for (const domain::ProductLot &lot : productLots) {
+                if (lot.id == allocation.lotId) {
+                    lotLabel = lot.lotNo;
+                    break;
+                }
+            }
+
+            allocationParts.push_back(QStringLiteral("%1 (%2)").arg(lotLabel).arg(allocation.qty));
+        }
+
         items.push_back(QVariantMap{
             {QStringLiteral("orderItemId"), item.id},
             {QStringLiteral("productId"), item.productId},
@@ -642,6 +799,8 @@ void OrdersViewModel::refreshSelectedOrder()
             {QStringLiteral("discountText"), formatMoneyVnd(item.discountVnd)},
             {QStringLiteral("lineTotalVnd"), item.lineTotalVnd},
             {QStringLiteral("lineTotalText"), formatMoneyVnd(item.lineTotalVnd)},
+            {QStringLiteral("primaryLotId"), primaryLotId},
+            {QStringLiteral("lotSummary"), allocationParts.join(QStringLiteral(", "))},
         });
     }
 
@@ -660,6 +819,7 @@ void OrdersViewModel::refreshLookups()
             {QStringLiteral("id"), customer.id},
             {QStringLiteral("code"), customer.code},
             {QStringLiteral("name"), customer.name},
+            {QStringLiteral("phone"), customer.phone},
             {QStringLiteral("label"), customer.code + QStringLiteral(" - ") + customer.name},
         });
     }

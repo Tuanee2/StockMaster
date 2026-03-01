@@ -3,7 +3,7 @@
 ## 1) Feature đã hoàn thành và chạy được
 
 - Customer CRUD (mã khách tự sinh)
-- Product CRUD
+- Product CRUD (SKU tự sinh khi tạo mới)
 - Quản lý lô sản phẩm
   - có ngày hết hạn cho từng lô
 - Nhập/xuất tồn theo lô
@@ -20,6 +20,8 @@
   - tạo draft
   - cập nhật khách
   - thêm/cập nhật/xóa item
+  - chọn lô ưu tiên khi thêm item
+  - tự phân bổ item qua nhiều lô nếu lô đầu không đủ
   - confirm với trừ kho theo allocation
   - void với hoàn kho
 - Query đơn theo mã hoặc ngày/khoảng ngày
@@ -27,7 +29,7 @@
 - Dashboard mixed mode:
   - KPI vận hành
   - cảnh báo vận hành
-  - biểu đồ doanh số vs thu tiền 6 tháng
+  - biểu đồ doanh số vs thu tiền 7 ngày gần nhất
   - top khách hàng
   - top sản phẩm
 - Reports flow:
@@ -45,9 +47,10 @@
   - order / order item / stock allocation
   - payment
 - Settings updater:
-  - khi vào tab sẽ tự kiểm tra GitHub Release mới nhất
-  - có 1 nút để kiểm tra lại và tải gói cập nhật
-  - tự tải gói cập nhật theo nền tảng và tự mở gói sau khi tải xong
+  - không tự chạy khi mở tab
+  - có 2 bước tách riêng: kiểm tra phiên bản rồi mới cập nhật
+  - chỉ tải gói cập nhật theo nền tảng khi người dùng bấm `Cập nhật`
+  - tự mở gói sau khi tải xong
   - không đụng DB local
 - GitHub Actions release packaging:
   - macOS `.dmg`
@@ -57,6 +60,7 @@
   - `sqlite_persistence_smoke`
   - `dashboard_view_model_smoke`
   - `inventory_service_smoke`
+  - `order_allocation_smoke`
   - `payment_service_smoke`
 
 ## 2) Feature mới thêm gần nhất (Release updater + packaging)
@@ -64,8 +68,8 @@
 - Thêm `SettingsViewModel` để:
   - kiểm tra `releases/latest` trên GitHub
   - so sánh version hiện tại với `tag_name`
-  - tự tải gói update về thư mục tải xuống
-- `SettingsScreen` không còn là placeholder; hiện chỉ giữ 1 nút cập nhật và phần trạng thái tải
+  - chỉ tải gói update khi người dùng xác nhận qua nút `Cập nhật`
+- `SettingsScreen` không còn là placeholder; hiện có 2 nút `Kiểm tra phiên bản` và `Cập nhật`
 - Thêm workflow `.github/workflows/release.yml`:
   - build `Release` trên macOS và Windows
   - dùng `macdeployqt` / `windeployqt`

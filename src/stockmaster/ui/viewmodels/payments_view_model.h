@@ -19,6 +19,7 @@ class PaymentsViewModel : public QAbstractListModel {
     Q_PROPERTY(QString selectedCustomerName READ selectedCustomerName NOTIFY selectedCustomerChanged)
     Q_PROPERTY(QString selectedReceivableText READ selectedReceivableText NOTIFY selectedCustomerChanged)
     Q_PROPERTY(int selectedOpenOrderCount READ selectedOpenOrderCount NOTIFY selectedCustomerChanged)
+    Q_PROPERTY(QString preferredOrderId READ preferredOrderId NOTIFY detailChanged)
     Q_PROPERTY(QVariantList payableOrders READ payableOrders NOTIFY detailChanged)
     Q_PROPERTY(QVariantList paymentHistory READ paymentHistory NOTIFY detailChanged)
     Q_PROPERTY(QVariantList customerLedger READ customerLedger NOTIFY detailChanged)
@@ -51,12 +52,14 @@ public:
     [[nodiscard]] QString selectedCustomerName() const;
     [[nodiscard]] QString selectedReceivableText() const;
     [[nodiscard]] int selectedOpenOrderCount() const;
+    [[nodiscard]] QString preferredOrderId() const;
     [[nodiscard]] QVariantList payableOrders() const;
     [[nodiscard]] QVariantList paymentHistory() const;
     [[nodiscard]] QVariantList customerLedger() const;
 
     Q_INVOKABLE void reload();
     Q_INVOKABLE void selectCustomer(const QString &customerId);
+    Q_INVOKABLE void focusOrder(const QString &customerId, const QString &orderId);
     Q_INVOKABLE bool createReceipt(const QString &orderId,
                                    const QString &amountText,
                                    const QString &method,
@@ -85,6 +88,7 @@ private:
     bool m_hasSelectedCustomer = false;
     QString m_selectedCustomerId;
     QString m_selectedCustomerName;
+    QString m_preferredOrderId;
     core::Money m_selectedReceivableVnd = 0;
     int m_selectedOpenOrderCount = 0;
 

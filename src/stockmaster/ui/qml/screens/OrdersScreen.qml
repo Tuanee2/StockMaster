@@ -12,6 +12,75 @@ Flickable {
 
     property string selectedItemIdForEdit: ""
     property int orderTabIndex: 0
+    property bool itemFormLoading: false
+    property var newOrderCustomerOptions: []
+    property var orderCustomerOptions: []
+    property var productLotOptions: []
+    property var allocationPreviewRows: []
+
+    function customerMatches(customer, keyword) {
+        const normalized = keyword.trim().toLowerCase()
+        if (!normalized) {
+            return true
+        }
+
+        const code = (customer.code || "").toLowerCase()
+        const name = (customer.name || "").toLowerCase()
+        const phone = (customer.phone || "").toLowerCase()
+        const label = (customer.label || "").toLowerCase()
+        return code.indexOf(normalized) >= 0
+            || name.indexOf(normalized) >= 0
+            || phone.indexOf(normalized) >= 0
+            || label.indexOf(normalized) >= 0
+    }
+
+    function rebuildCustomerOptions() {
+        const allCustomers = ordersViewModel.customers || []
+        const currentNewOrderId = root.selectedId(newOrderCustomerCombo)
+        const selectedCustomerId = ordersViewModel.selectedOrderCustomerId
+
+        const nextNewOrderOptions = []
+        const nextSelectedOrderOptions = []
+        for (let i = 0; i < allCustomers.length; ++i) {
+            const customer = allCustomers[i]
+            if (root.customerMatches(customer, newOrderCustomerSearchField.text)) {
+                nextNewOrderOptions.push(customer)
+            }
+            if (root.customerMatches(customer, orderCustomerSearchField.text)) {
+                nextSelectedOrderOptions.push(customer)
+            }
+        }
+
+        root.newOrderCustomerOptions = nextNewOrderOptions
+        root.orderCustomerOptions = nextSelectedOrderOptions
+
+        if (root.newOrderCustomerOptions.length === 0) {
+            newOrderCustomerCombo.currentIndex = -1
+        } else {
+            root.setComboIndexById(newOrderCustomerCombo, currentNewOrderId)
+            if (newOrderCustomerCombo.currentIndex < 0) {
+                newOrderCustomerCombo.currentIndex = 0
+            }
+        }
+
+        if (root.orderCustomerOptions.length === 0) {
+            orderCustomerCombo.currentIndex = -1
+        } else {
+            root.setComboIndexById(orderCustomerCombo, selectedCustomerId)
+        }
+    }
+
+    function refreshScreenData() {
+        ordersViewModel.reload()
+        root.rebuildCustomerOptions()
+        root.rebuildProductLotOptions()
+        root.syncUnitPriceFromSelectedProduct(false)
+        root.refreshAllocationPreview()
+        appViewModel.refreshOverview()
+        if (ordersViewModel.orderCount > 0 && !ordersViewModel.hasSelectedOrder) {
+            ordersViewModel.selectOrder(ordersViewModel.orderIdAt(0))
+        }
+    }
 
     function setComboIndexById(combo, id) {
         if (!combo || !combo.model) {
@@ -41,18 +110,63 @@ Flickable {
             return
         }
 
+        itemFormLoading = true
         selectedItemIdForEdit = itemData.orderItemId
         setComboIndexById(productCombo, itemData.productId)
+        root.rebuildProductLotOptions()
+        root.setComboIndexById(productLotCombo, itemData.primaryLotId || "")
         qtyField.text = itemData.qty.toString()
         unitPriceField.text = itemData.unitPriceVnd.toString()
         discountField.text = itemData.discountVnd.toString()
+        root.refreshAllocationPreview()
+        itemFormLoading = false
     }
 
     function clearItemForm() {
         selectedItemIdForEdit = ""
+        itemFormLoading = true
         qtyField.text = ""
-        unitPriceField.text = ""
         discountField.text = ""
+        root.rebuildProductLotOptions()
+        root.syncUnitPriceFromSelectedProduct(false)
+        root.refreshAllocationPreview()
+        itemFormLoading = false
+    }
+
+    function rebuildProductLotOptions() {
+        const currentLotId = root.selectedId(productLotCombo)
+        root.productLotOptions = ordersViewModel.lotsForProduct(root.selectedId(productCombo))
+
+        if (root.productLotOptions.length === 0) {
+            productLotCombo.currentIndex = -1
+        } else {
+            root.setComboIndexById(productLotCombo, currentLotId)
+            if (productLotCombo.currentIndex < 0) {
+                productLotCombo.currentIndex = 0
+            }
+        }
+    }
+
+    function syncUnitPriceFromSelectedProduct(force) {
+        const productId = root.selectedId(productCombo)
+        if (!productId) {
+            if (force) {
+                unitPriceField.text = ""
+            }
+            return
+        }
+
+        if (!force && unitPriceField.text.length > 0) {
+            return
+        }
+
+        unitPriceField.text = ordersViewModel.defaultPriceTextForProduct(productId)
+    }
+
+    function refreshAllocationPreview() {
+        root.allocationPreviewRows = ordersViewModel.previewAllocations(root.selectedId(productCombo),
+                                                                        root.selectedId(productLotCombo),
+                                                                        qtyField.text)
     }
 
     component ActionButton: Button {
@@ -154,13 +268,21 @@ Flickable {
             root.setComboIndexById(orderCustomerCombo, ordersViewModel.selectedOrderCustomerId)
             root.clearItemForm()
         }
+
+        function onLookupChanged() {
+            root.rebuildCustomerOptions()
+            root.rebuildProductLotOptions()
+            root.syncUnitPriceFromSelectedProduct(false)
+        }
     }
 
     Component.onCompleted: {
-        ordersViewModel.reload()
-        appViewModel.refreshOverview()
-        if (ordersViewModel.orderCount > 0 && !ordersViewModel.hasSelectedOrder) {
-            ordersViewModel.selectOrder(ordersViewModel.orderIdAt(0))
+        root.refreshScreenData()
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            root.refreshScreenData()
         }
     }
 
@@ -173,7 +295,7 @@ Flickable {
         SectionHeader {
             Layout.fillWidth: true
             title: "Đơn hàng"
-            subtitle: "Dùng thanh tab nhỏ để điều hướng: Tạo Draft, Chi tiết đơn, và Item/Xử lý."
+            subtitle: "Dùng thanh tab nhỏ để điều hướng: Tạo Draft, Item & Xử lý, rồi đến Chi tiết đơn."
         }
 
         RowLayout {
@@ -436,14 +558,14 @@ Flickable {
 
                             NavTabButton {
                                 Layout.fillWidth: true
-                                tabIndex: 1
-                                text: "Chi tiết đơn"
+                                tabIndex: 2
+                                text: "Item & Xử lý"
                             }
 
                             NavTabButton {
                                 Layout.fillWidth: true
-                                tabIndex: 2
-                                text: "Item & Xử lý"
+                                tabIndex: 1
+                                text: "Chi tiết đơn"
                             }
                         }
                     }
@@ -465,6 +587,14 @@ Flickable {
                                     color: "#1B2B40"
                                 }
 
+                                SolidTextField {
+                                    id: newOrderCustomerSearchField
+
+                                    Layout.fillWidth: true
+                                    placeholderText: "Tìm khách theo tên, mã hoặc số điện thoại"
+                                    onTextChanged: root.rebuildCustomerOptions()
+                                }
+
                                 Flow {
                                     Layout.fillWidth: true
                                     spacing: 8
@@ -473,7 +603,7 @@ Flickable {
                                         id: newOrderCustomerCombo
 
                                         width: Math.max(220, Math.min(400, parent.width * 0.45))
-                                        model: ordersViewModel.customers
+                                        model: root.newOrderCustomerOptions
                                         textRole: "label"
                                     }
 
@@ -491,7 +621,7 @@ Flickable {
                                         onClicked: {
                                             if (ordersViewModel.createDraftOrder(root.selectedId(newOrderCustomerCombo), orderDateField.text)) {
                                                 appViewModel.refreshOverview()
-                                                root.orderTabIndex = 1
+                                                root.orderTabIndex = 2
                                             }
                                         }
                                     }
@@ -506,7 +636,7 @@ Flickable {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "Tạo draft rồi chuyển qua tab 'Chi tiết đơn' hoặc 'Item & Xử lý' để thao tác tiếp."
+                                        text: "Tạo draft rồi chuyển qua tab 'Item & Xử lý' để thêm hàng, hoặc 'Chi tiết đơn' để xem nhanh."
                                         color: "#4D617B"
                                         font.pixelSize: 13
                                     }
@@ -538,12 +668,21 @@ Flickable {
                                         Layout.preferredWidth: 86
                                     }
 
+                                    SolidTextField {
+                                        id: orderCustomerSearchField
+
+                                        Layout.preferredWidth: 220
+                                        enabled: ordersViewModel.canEditDraft
+                                        placeholderText: "Tìm tên hoặc số điện thoại"
+                                        onTextChanged: root.rebuildCustomerOptions()
+                                    }
+
                                     SolidComboBox {
                                         id: orderCustomerCombo
 
                                         Layout.fillWidth: true
                                         enabled: ordersViewModel.canEditDraft
-                                        model: ordersViewModel.customers
+                                        model: root.orderCustomerOptions
                                         textRole: "label"
                                         onActivated: {
                                             if (ordersViewModel.updateSelectedOrderCustomer(root.selectedId(orderCustomerCombo))) {
@@ -571,7 +710,7 @@ Flickable {
                                             property var itemData: modelData
 
                                             width: ListView.view.width
-                                            height: 64
+                                            height: itemData.lotSummary && itemData.lotSummary.length > 0 ? 82 : 64
                                             radius: 8
                                             color: "#FFFFFF"
                                             border.width: 1
@@ -595,6 +734,15 @@ Flickable {
                                                           + " | Thành tiền: " + itemData.lineTotalText
                                                     font.pixelSize: 12
                                                     color: "#4D617B"
+                                                    elide: Text.ElideRight
+                                                    width: parent.width
+                                                }
+
+                                                Text {
+                                                    visible: itemData.lotSummary && itemData.lotSummary.length > 0
+                                                    text: "Phân lô: " + itemData.lotSummary
+                                                    font.pixelSize: 11
+                                                    color: "#58708F"
                                                     elide: Text.ElideRight
                                                     width: parent.width
                                                 }
@@ -628,9 +776,25 @@ Flickable {
                                         enabled: ordersViewModel.canEditDraft
                                         model: ordersViewModel.products
                                         textRole: "label"
-                                        onActivated: {
-                                            if (unitPriceField.text.length === 0) {
-                                                unitPriceField.text = ordersViewModel.defaultPriceTextForProduct(root.selectedId(productCombo))
+                                        onCurrentIndexChanged: {
+                                            if (!root.itemFormLoading) {
+                                                root.rebuildProductLotOptions()
+                                                root.syncUnitPriceFromSelectedProduct(true)
+                                                root.refreshAllocationPreview()
+                                            }
+                                        }
+                                    }
+
+                                    SolidComboBox {
+                                        id: productLotCombo
+
+                                        width: Math.max(220, Math.min(320, parent.width * 0.38))
+                                        enabled: ordersViewModel.canEditDraft && root.productLotOptions.length > 0
+                                        model: root.productLotOptions
+                                        textRole: "label"
+                                        onCurrentIndexChanged: {
+                                            if (!root.itemFormLoading) {
+                                                root.refreshAllocationPreview()
                                             }
                                         }
                                     }
@@ -642,6 +806,7 @@ Flickable {
                                         enabled: ordersViewModel.canEditDraft
                                         placeholderText: "SL"
                                         inputMethodHints: Qt.ImhDigitsOnly
+                                        onTextChanged: root.refreshAllocationPreview()
                                     }
 
                                     SolidTextField {
@@ -665,15 +830,71 @@ Flickable {
                                     ActionButton {
                                         text: selectedItemIdForEdit.length > 0 ? "Cập nhật item" : "Thêm item"
                                         enabled: ordersViewModel.canEditDraft
+                                                 && root.selectedId(productCombo).length > 0
+                                                 && root.selectedId(productLotCombo).length > 0
                                         fillColor: "#2D6CDF"
                                         onClicked: {
                                             if (ordersViewModel.addOrUpdateDraftItem(
                                                         root.selectedId(productCombo),
+                                                        root.selectedId(productLotCombo),
                                                         qtyField.text,
                                                         unitPriceField.text,
                                                         discountField.text)) {
                                                 root.clearItemForm()
                                                 appViewModel.refreshOverview()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: previewContent.implicitHeight + 16
+                                    visible: ordersViewModel.canEditDraft && root.selectedId(productCombo).length > 0
+                                    radius: 10
+                                    color: "#F7FBFF"
+                                    border.color: "#D7E4F2"
+
+                                    Column {
+                                        id: previewContent
+
+                                        x: 8
+                                        y: 8
+                                        width: parent.width - 16
+                                        spacing: 4
+
+                                        Text {
+                                            width: parent.width
+                                            text: root.productLotOptions.length > 0 && productLotCombo.currentIndex >= 0
+                                                ? "Lô đang chọn tối đa: " + root.productLotOptions[productLotCombo.currentIndex].onHandQty
+                                                  + " | " + root.productLotOptions[productLotCombo.currentIndex].lotNo
+                                                : "Sản phẩm này chưa có lô còn tồn để phân bổ."
+                                            font.pixelSize: 12
+                                            font.weight: Font.DemiBold
+                                            color: "#365478"
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        Text {
+                                            width: parent.width
+                                            visible: qtyField.text.length === 0
+                                            text: "Nhập số lượng để xem cách hệ thống phân bổ từ lô đã chọn sang các lô còn lại."
+                                            font.pixelSize: 11
+                                            color: "#6B819A"
+                                            wrapMode: Text.WordWrap
+                                        }
+
+                                        Repeater {
+                                            model: root.allocationPreviewRows
+
+                                            delegate: Text {
+                                                required property var modelData
+
+                                                width: previewContent.width
+                                                text: "• " + modelData.label
+                                                font.pixelSize: 11
+                                                color: modelData.allocatedQty < 0 ? "#8F2D2D" : "#4D617B"
+                                                wrapMode: Text.WordWrap
                                             }
                                         }
                                     }
@@ -697,7 +918,7 @@ Flickable {
                                             property var itemData: modelData
 
                                             width: ListView.view.width
-                                            height: 72
+                                            height: itemData.lotSummary && itemData.lotSummary.length > 0 ? 88 : 72
                                             radius: 8
                                             color: "#FFFFFF"
                                             border.width: 1
@@ -726,6 +947,15 @@ Flickable {
                                                               + " | Thành tiền: " + itemData.lineTotalText
                                                         font.pixelSize: 12
                                                         color: "#4D617B"
+                                                        elide: Text.ElideRight
+                                                        width: parent.width
+                                                    }
+
+                                                    Text {
+                                                        visible: itemData.lotSummary && itemData.lotSummary.length > 0
+                                                        text: "Phân lô: " + itemData.lotSummary
+                                                        font.pixelSize: 11
+                                                        color: "#58708F"
                                                         elide: Text.ElideRight
                                                         width: parent.width
                                                     }
@@ -780,6 +1010,17 @@ Flickable {
                                                 productsViewModel.reload()
                                                 inventoryViewModel.reload()
                                             }
+                                        }
+                                    }
+
+                                    ActionButton {
+                                        text: "Sang thanh toán"
+                                        fillColor: "#255D9C"
+                                        enabled: ordersViewModel.canOpenPayment
+                                        onClicked: {
+                                            paymentsViewModel.focusOrder(ordersViewModel.selectedOrderCustomerId,
+                                                                         ordersViewModel.selectedOrderId)
+                                            appViewModel.currentSection = "Payments"
                                         }
                                     }
                                 }

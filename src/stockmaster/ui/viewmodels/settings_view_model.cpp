@@ -28,7 +28,7 @@ const QUrl kLatestReleaseUrl(QStringLiteral("https://api.github.com/repos/Tuanee
 SettingsViewModel::SettingsViewModel(infra::db::DatabaseService &databaseService, QObject *parent)
     : QObject(parent)
     , m_databaseService(databaseService)
-    , m_statusText(QStringLiteral("Mở mục này để kiểm tra GitHub Release mới và tải gói cập nhật."))
+    , m_statusText(QStringLiteral("Bấm \"Kiểm tra phiên bản\" để kiểm tra GitHub Release mới, sau đó bấm \"Cập nhật\" khi có bản phù hợp."))
 {
 }
 
@@ -48,12 +48,16 @@ SettingsViewModel::~SettingsViewModel()
 QString SettingsViewModel::currentVersion() const
 {
     const QString version = QCoreApplication::applicationVersion().trimmed();
-    return version.isEmpty() ? QStringLiteral("0.0.0") : version;
+    if (version.isEmpty()) {
+        return QStringLiteral("0.0.0");
+    }
+
+    return formatVersionForDisplay(version);
 }
 
 QString SettingsViewModel::latestVersion() const
 {
-    return m_latestVersion;
+    return formatVersionForDisplay(m_latestVersion);
 }
 
 QString SettingsViewModel::statusText() const
@@ -61,17 +65,22 @@ QString SettingsViewModel::statusText() const
     return m_statusText;
 }
 
-QString SettingsViewModel::actionLabel() const
+QString SettingsViewModel::updateActionLabel() const
 {
-    if (m_checking) {
-        return QStringLiteral("Đang kiểm tra...");
-    }
-
     if (m_downloading) {
         return QStringLiteral("Đang tải bản cập nhật...");
     }
 
-    return QStringLiteral("Kiểm tra và tải bản cập nhật");
+    if (!canUpdate()) {
+        return QStringLiteral("Cập nhật");
+    }
+
+    const QFileInfo targetInfo(availableTargetFilePath());
+    if (targetInfo.exists() && targetInfo.size() > 0) {
+        return QStringLiteral("Mở gói cập nhật");
+    }
+
+    return QStringLiteral("Tải và mở bản cập nhật");
 }
 
 QString SettingsViewModel::databasePath() const
@@ -104,6 +113,11 @@ bool SettingsViewModel::updateAvailable() const
     return !m_latestVersion.isEmpty() && compareVersions(m_latestVersion, currentVersion()) > 0;
 }
 
+bool SettingsViewModel::canUpdate() const
+{
+    return updateAvailable() && m_availableAssetUrl.isValid() && !m_availableAssetName.isEmpty();
+}
+
 int SettingsViewModel::downloadProgress() const
 {
     return m_downloadProgress;
@@ -116,6 +130,8 @@ void SettingsViewModel::checkForUpdates()
     }
 
     m_checking = true;
+    m_availableAssetName.clear();
+    m_availableAssetUrl = QUrl();
     m_downloadProgress = -1;
     setStatusText(QStringLiteral("Đang kiểm tra phiên bản mới từ GitHub Releases..."));
     emitStateChanged();
@@ -143,8 +159,8 @@ void SettingsViewModel::checkForUpdates()
 
         const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (reply->error() != QNetworkReply::NoError) {
+            m_latestVersion.clear();
             if (httpStatus == 404) {
-                m_latestVersion.clear();
                 setStatusText(QStringLiteral("Chưa có GitHub Release nào được publish để kiểm tra cập nhật."));
             } else {
                 setStatusText(QStringLiteral("Không thể kiểm tra cập nhật: %1").arg(reply->errorString()));
@@ -173,6 +189,8 @@ void SettingsViewModel::checkForUpdates()
 
         m_latestVersion = releaseVersion;
         if (compareVersions(m_latestVersion, currentVersion()) <= 0) {
+            m_availableAssetName.clear();
+            m_availableAssetUrl = QUrl();
             setStatusText(QStringLiteral("Bạn đang dùng bản mới nhất (%1).").arg(currentVersion()));
             emitStateChanged();
             return;
@@ -182,39 +200,86 @@ void SettingsViewModel::checkForUpdates()
         const QString assetUrl = findCompatibleAssetUrl(release.value(QStringLiteral("assets")).toArray(),
                                                         assetName);
         if (assetUrl.isEmpty()) {
+            m_availableAssetName.clear();
+            m_availableAssetUrl = QUrl();
             setStatusText(QStringLiteral("Đã có bản %1 nhưng chưa có gói cài đặt phù hợp cho nền tảng hiện tại.")
                               .arg(m_latestVersion));
             emitStateChanged();
             return;
         }
 
-        const QString downloadDirectory = resolveDownloadDirectory();
-        if (downloadDirectory.isEmpty()) {
-            setStatusText(QStringLiteral("Không xác định được thư mục tải bản cập nhật."));
-            emitStateChanged();
-            return;
-        }
+        m_availableAssetName = assetName;
+        m_availableAssetUrl = QUrl(assetUrl);
 
-        QDir directory(downloadDirectory);
-        if (!directory.mkpath(QStringLiteral("."))) {
-            setStatusText(QStringLiteral("Không thể tạo thư mục lưu bản cập nhật: %1")
-                              .arg(QDir::toNativeSeparators(downloadDirectory)));
-            emitStateChanged();
-            return;
-        }
-
-        const QString targetFilePath = directory.filePath(QStringLiteral("%1-%2").arg(m_latestVersion, assetName));
-        QFileInfo targetInfo(targetFilePath);
+        const QFileInfo targetInfo(availableTargetFilePath());
         if (targetInfo.exists() && targetInfo.size() > 0) {
-            m_downloadedFilePath = QDir::toNativeSeparators(targetFilePath);
-            setStatusText(QStringLiteral("Đã có sẵn gói cập nhật %1 tại %2. Cài đặt gói mới sẽ giữ nguyên DB hiện tại.")
+            m_downloadedFilePath = QDir::toNativeSeparators(targetInfo.filePath());
+            setStatusText(QStringLiteral("Đã tìm thấy bản %1 và đã có sẵn gói tại %2. Bấm \"Cập nhật\" để mở gói cài đặt. DB hiện tại sẽ được giữ nguyên.")
                               .arg(m_latestVersion, m_downloadedFilePath));
             emitStateChanged();
             return;
         }
 
-        startDownload(QUrl(assetUrl), targetFilePath);
+        setStatusText(QStringLiteral("Đã tìm thấy bản %1. Bấm \"Cập nhật\" để tải và mở gói cài đặt phù hợp cho nền tảng hiện tại.")
+                          .arg(m_latestVersion));
+        emitStateChanged();
     });
+}
+
+void SettingsViewModel::downloadUpdate()
+{
+    if (busy()) {
+        return;
+    }
+
+    if (!canUpdate()) {
+        setStatusText(QStringLiteral("Chưa có bản cập nhật sẵn sàng. Hãy bấm \"Kiểm tra phiên bản\" trước."));
+        emitStateChanged();
+        return;
+    }
+
+    const QString downloadDirectory = resolveDownloadDirectory();
+    if (downloadDirectory.isEmpty()) {
+        setStatusText(QStringLiteral("Không xác định được thư mục tải bản cập nhật."));
+        emitStateChanged();
+        return;
+    }
+
+    QDir directory(downloadDirectory);
+    if (!directory.mkpath(QStringLiteral("."))) {
+        setStatusText(QStringLiteral("Không thể tạo thư mục lưu bản cập nhật: %1")
+                          .arg(QDir::toNativeSeparators(downloadDirectory)));
+        emitStateChanged();
+        return;
+    }
+
+    const QString targetFilePath = availableTargetFilePath();
+    if (targetFilePath.isEmpty()) {
+        setStatusText(QStringLiteral("Thiếu thông tin gói cài đặt để cập nhật."));
+        emitStateChanged();
+        return;
+    }
+
+    const QFileInfo targetInfo(targetFilePath);
+    if (targetInfo.exists() && targetInfo.size() > 0) {
+        m_downloadedFilePath = QDir::toNativeSeparators(targetInfo.filePath());
+        const bool opened = openDownloadedPackage();
+        if (opened) {
+            setStatusText(QStringLiteral("Đang mở gói cập nhật %1 tại %2. Cài đặt gói mới sẽ giữ nguyên DB local tại %3.")
+                              .arg(m_latestVersion,
+                                   m_downloadedFilePath,
+                                   QDir::toNativeSeparators(m_databaseService.databaseFilePath())));
+        } else {
+            setStatusText(QStringLiteral("Đã có sẵn gói cập nhật %1 tại %2 nhưng không thể tự mở. Cài đặt gói mới vẫn sẽ giữ nguyên DB local tại %3.")
+                              .arg(m_latestVersion,
+                                   m_downloadedFilePath,
+                                   QDir::toNativeSeparators(m_databaseService.databaseFilePath())));
+        }
+        emitStateChanged();
+        return;
+    }
+
+    startDownload(m_availableAssetUrl, targetFilePath);
 }
 
 QString SettingsViewModel::normalizeVersion(const QString &versionText)
@@ -230,6 +295,26 @@ QString SettingsViewModel::normalizeVersion(const QString &versionText)
     }
 
     return normalized;
+}
+
+QString SettingsViewModel::formatVersionForDisplay(const QString &versionText)
+{
+    const QString normalized = normalizeVersion(versionText);
+    if (normalized.isEmpty()) {
+        return QString();
+    }
+
+    const QVersionNumber parsed = QVersionNumber::fromString(normalized);
+    if (parsed.isNull()) {
+        return normalized;
+    }
+
+    QList<int> segments = parsed.segments();
+    while (segments.size() < 3) {
+        segments.append(0);
+    }
+
+    return QVersionNumber(segments).toString();
 }
 
 int SettingsViewModel::compareVersions(const QString &left, const QString &right)
@@ -299,6 +384,20 @@ QString SettingsViewModel::resolveDownloadDirectory() const
     }
 
     return QDir(basePath).filePath(QStringLiteral("StockMasterUpdates"));
+}
+
+QString SettingsViewModel::availableTargetFilePath() const
+{
+    if (!canUpdate()) {
+        return QString();
+    }
+
+    const QString downloadDirectory = resolveDownloadDirectory();
+    if (downloadDirectory.isEmpty()) {
+        return QString();
+    }
+
+    return QDir(downloadDirectory).filePath(QStringLiteral("%1-%2").arg(m_latestVersion, m_availableAssetName));
 }
 
 void SettingsViewModel::startDownload(const QUrl &downloadUrl, const QString &targetFilePath)

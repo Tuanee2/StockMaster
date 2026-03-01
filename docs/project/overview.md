@@ -29,7 +29,7 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - KPI vận hành
   - công nợ phải thu
   - cảnh báo vận hành
-  - biểu đồ doanh số vs thu tiền 6 tháng
+- biểu đồ doanh số vs thu tiền 7 ngày gần nhất
   - top khách hàng theo doanh số
   - top sản phẩm bán chạy
 - Reports flow:
@@ -39,6 +39,7 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - export CSV/PDF
 - Customer CRUD
 - Product CRUD
+- SKU tự sinh khi tạo mới
 - Lot management theo product
 - thêm hạn dùng cho từng lô
 - Stock in/out theo lô
@@ -53,6 +54,7 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - tạo draft
   - sửa khách hàng của draft
   - thêm/cập nhật/xóa item
+  - chọn lô ưu tiên + tự phân bổ qua nhiều lô nếu cần
   - confirm (trừ kho theo lô)
   - void (hoàn kho)
 - Query danh sách đơn:
@@ -65,8 +67,8 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - cập nhật trạng thái `PartiallyPaid` / `Paid`
   - đối soát ledger theo khách
 - Settings updater:
-  - tự kiểm tra GitHub Release mới nhất khi vào tab
-  - tự tải gói cập nhật đúng nền tảng
+  - kiểm tra GitHub Release theo thao tác người dùng
+  - chỉ tải gói cập nhật đúng nền tảng khi người dùng bấm `Cập nhật`
   - tự mở gói vừa tải sau khi tải xong
   - giữ nguyên DB cũ vì SQLite nằm ngoài thư mục cài đặt
 - Windows release hiện được đóng gói thành installer `.exe` thật, không còn chỉ là file nén `.zip`

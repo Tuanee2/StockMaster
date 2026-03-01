@@ -7,6 +7,7 @@ Item {
     id: root
 
     property string editingProductId: ""
+    property string currentProductSku: "Tự sinh khi lưu"
     property string selectedLotId: ""
     property string selectedLotNo: ""
 
@@ -36,6 +37,22 @@ Item {
         }
     }
 
+    component SolidTextField: TextField {
+        implicitHeight: 36
+        font.pixelSize: 13
+        color: enabled ? "#24364D" : "#6F8299"
+        placeholderTextColor: "#7286A0"
+        selectionColor: "#9DC0EA"
+        selectedTextColor: "#132338"
+
+        background: Rectangle {
+            radius: 8
+            color: parent.enabled ? "#ECF3FB" : "#E5EDF6"
+            border.width: 1
+            border.color: parent.activeFocus ? "#4F83CC" : "#A9C0DA"
+        }
+    }
+
     function resetLotFields() {
         const today = new Date()
         const expiry = new Date(today.getTime())
@@ -50,10 +67,10 @@ Item {
 
     function clearProductForm() {
         editingProductId = ""
+        currentProductSku = "Tự sinh khi lưu"
         selectedLotId = ""
         selectedLotNo = ""
 
-        skuField.text = ""
         nameField.text = ""
         unitField.text = "thung"
         defaultPriceField.text = ""
@@ -72,10 +89,10 @@ Item {
         }
 
         editingProductId = product.productId
+        currentProductSku = product.sku
         selectedLotId = ""
         selectedLotNo = ""
 
-        skuField.text = product.sku
         nameField.text = product.name
         unitField.text = product.unit
         defaultPriceField.text = product.defaultWholesalePriceText
@@ -122,7 +139,7 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
 
-                        TextField {
+                        SolidTextField {
                             id: searchField
 
                             Layout.fillWidth: true
@@ -130,8 +147,9 @@ Item {
                             onTextChanged: productsViewModel.filterText = text
                         }
 
-                        Button {
+                        ActionButton {
                             text: "Xóa lọc"
+                            fillColor: "#607D9C"
                             enabled: searchField.text.length > 0
                             onClicked: searchField.clear()
                         }
@@ -237,15 +255,16 @@ Item {
                         columnSpacing: 10
 
                         Label {
-                            text: "SKU"
+                            text: "Mã sản phẩm"
                             color: "#30465F"
                         }
 
-                        TextField {
-                            id: skuField
-
+                        Text {
                             Layout.fillWidth: true
-                            placeholderText: "VD: SP0010"
+                            text: root.currentProductSku
+                            color: "#1D3047"
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 14
                         }
 
                         Label {
@@ -253,7 +272,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: nameField
 
                             Layout.fillWidth: true
@@ -265,7 +284,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: unitField
 
                             Layout.fillWidth: true
@@ -277,7 +296,7 @@ Item {
                             color: "#30465F"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: defaultPriceField
 
                             Layout.fillWidth: true
@@ -302,27 +321,28 @@ Item {
                         Layout.fillWidth: true
                         spacing: 8
 
-                        Button {
+                        ActionButton {
                             text: "Tạo mới"
+                            fillColor: "#607D9C"
                             onClicked: root.clearProductForm()
                         }
 
-                        Button {
+                        ActionButton {
                             text: editingProductId.length > 0 ? "Lưu thay đổi" : "Thêm sản phẩm"
-                            highlighted: true
+                            fillColor: "#2D6CDF"
                             onClicked: {
                                 let success = false
                                 if (editingProductId.length > 0) {
                                     success = productsViewModel.updateProduct(
                                                 editingProductId,
-                                                skuField.text,
+                                                root.currentProductSku,
                                                 nameField.text,
                                                 unitField.text,
                                                 defaultPriceField.text,
                                                 isActiveCheck.checked)
                                 } else {
                                     success = productsViewModel.createProduct(
-                                                skuField.text,
+                                                "",
                                                 nameField.text,
                                                 unitField.text,
                                                 defaultPriceField.text,
@@ -341,8 +361,9 @@ Item {
                             }
                         }
 
-                        Button {
+                        ActionButton {
                             text: "Xóa"
+                            fillColor: "#C05A2A"
                             enabled: editingProductId.length > 0
                             onClicked: {
                                 if (productsViewModel.deleteProduct(editingProductId)) {
@@ -398,28 +419,28 @@ Item {
                         enabled: productsViewModel.hasSelectedProduct
                         spacing: 8
 
-                        TextField {
+                        SolidTextField {
                             id: lotNoField
 
                             width: Math.max(140, Math.min(220, parent.width * 0.3))
                             placeholderText: "Mã lô (tùy chọn)"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: lotDateField
 
                             width: Math.max(120, Math.min(170, parent.width * 0.22))
                             placeholderText: "Ngày nhập (YYYY-MM-DD)"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: lotExpiryField
 
                             width: Math.max(120, Math.min(170, parent.width * 0.22))
                             placeholderText: "Hạn dùng (YYYY-MM-DD)"
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: lotQtyField
 
                             width: Math.max(86, Math.min(110, parent.width * 0.15))
@@ -427,7 +448,7 @@ Item {
                             inputMethodHints: Qt.ImhDigitsOnly
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: lotCostField
 
                             width: Math.max(100, Math.min(140, parent.width * 0.2))
@@ -542,8 +563,9 @@ Item {
                                         }
                                     }
 
-                                    Button {
+                                    ActionButton {
                                         text: "Chọn"
+                                        fillColor: "#607D9C"
                                         onClicked: {
                                             root.selectedLotId = lotData.lotId
                                             root.selectedLotNo = lotData.lotNo
@@ -577,7 +599,7 @@ Item {
                             elide: Text.ElideRight
                         }
 
-                        TextField {
+                        SolidTextField {
                             id: movementQtyField
 
                             Layout.preferredWidth: 110
