@@ -58,12 +58,12 @@ Test hiện có:
   - `workflow_dispatch` để build/đóng gói thủ công
 - Gói phát hành hiện tại:
   - macOS: `StockMaster-macos.dmg`
-  - Windows: `StockMaster-windows-x64.zip`
+  - Windows: `StockMaster-windows-x64-setup.exe`
 - Pipeline:
   1. cài Qt `6.9.3`
   2. build `Release`
   3. macOS dùng `macdeployqt` để tạo `.dmg`
-  4. Windows dùng `windeployqt` để gom DLL/plugin rồi nén `.zip`
+  4. Windows dùng `windeployqt` để gom DLL/plugin rồi chạy `NSIS` để tạo installer `.exe`
   5. khi là tag `v*`, upload 2 file này vào GitHub Release
 
 ## 7) Updater trong Settings
@@ -72,7 +72,7 @@ Test hiện có:
   - `https://api.github.com/repos/Tuanee2/StockMaster/releases/latest`
 - Nếu `tag_name` mới hơn version đang chạy và có asset phù hợp nền tảng:
   - macOS: ưu tiên `.dmg` / `.pkg`
-  - Windows: ưu tiên `.zip` / `.msi` / `.exe`
+  - Windows: ưu tiên `.exe` / `.msi` / `.zip`
 - Gói cập nhật sẽ được tải về:
   - `Downloads/StockMasterUpdates`
   - fallback: `AppDataLocation/StockMasterUpdates`

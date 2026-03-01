@@ -51,7 +51,7 @@
   - không đụng DB local
 - GitHub Actions release packaging:
   - macOS `.dmg`
-  - Windows `.zip` đã chạy `windeployqt`
+  - Windows installer `.exe` qua `windeployqt` + `NSIS`
 - Smoke test:
   - `report_service_smoke`
   - `sqlite_persistence_smoke`
@@ -69,6 +69,7 @@
 - Thêm workflow `.github/workflows/release.yml`:
   - build `Release` trên macOS và Windows
   - dùng `macdeployqt` / `windeployqt`
+  - Windows gọi thêm `NSIS` để tạo installer `.exe`
   - upload asset vào GitHub Release khi push tag `v*`
 
 ## 3) Giới hạn kỹ thuật hiện tại

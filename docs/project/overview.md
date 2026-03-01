@@ -69,6 +69,7 @@ StockMaster là ứng dụng quản lý bán buôn theo hướng desktop (Qt/QML
   - tự tải gói cập nhật đúng nền tảng
   - tự mở gói vừa tải sau khi tải xong
   - giữ nguyên DB cũ vì SQLite nằm ngoài thư mục cài đặt
+- Windows release hiện được đóng gói thành installer `.exe` thật, không còn chỉ là file nén `.zip`
 
 Chưa triển khai đầy đủ:
 - debt ledger hiện vẫn là đối soát suy diễn từ order/payment, chưa lưu bảng riêng

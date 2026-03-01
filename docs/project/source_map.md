@@ -5,6 +5,7 @@
 - `main.cpp`: khởi tạo app + service + viewmodels + inject context vào QML.
 - `CMakeLists.txt`: định nghĩa executable, sources, QML module.
 - `.github/workflows/release.yml`: build `Release`, đóng gói macOS/Windows, publish GitHub Release khi push tag `v*`.
+- `packaging/windows/StockMasterInstaller.nsi`: script `NSIS` để biến thư mục deploy Windows thành installer `.exe`.
 
 ## 2) Cấu trúc thư mục chính
 
