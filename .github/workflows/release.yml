@@ -90,9 +90,10 @@ jobs:
           Copy-Item "${env:BUILD_DIR}\appStockMaster.exe" "dist\StockMaster\appStockMaster.exe"
           windeployqt --release --qmldir src/stockmaster/ui/qml "dist\StockMaster\appStockMaster.exe"
           $stagingDir = (Resolve-Path "dist\StockMaster").Path
+          $outputFile = Join-Path (Resolve-Path "dist").Path "StockMaster-windows-x64-setup.exe"
           & $nsis `
             /DAPP_VERSION=$env:RELEASE_VERSION `
-            /DOUTPUT_FILE="dist\StockMaster-windows-x64-setup.exe" `
+            /DOUTPUT_FILE="$outputFile" `
             /DSTAGING_DIR="$stagingDir" `
             packaging\windows\StockMasterInstaller.nsi
 

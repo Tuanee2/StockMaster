@@ -67,6 +67,7 @@ Test hiện có:
   5. khi là tag `v*`, upload 2 file này vào GitHub Release
 - Trên GitHub Windows runner, workflow gọi trực tiếp `makensis.exe` từ thư mục cài đặt `NSIS` để tránh lỗi `PATH` không nhận lệnh `makensis`.
 - Workflow cũng truyền `STAGING_DIR` cho NSIS bằng đường dẫn tuyệt đối (`Resolve-Path`) để tránh lỗi không tìm thấy file khi compile installer.
+- `OUTPUT_FILE` cũng được truyền bằng đường dẫn tuyệt đối để NSIS không resolve nhầm theo thư mục chứa file `.nsi`.
 
 ## 7) Updater trong Settings
 
